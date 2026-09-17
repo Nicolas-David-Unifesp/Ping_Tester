@@ -26,3 +26,24 @@ public sealed record TestResponse(
     IReadOnlyList<InvalidInputDto> Invalid);
 
 public sealed record InvalidInputDto(string Value, string Reason);
+
+
+// --- Monitoring tab -------------------------------------------------------
+
+/// <summary>Status of one monitored host (ping-only, fast path).</summary>
+public sealed record MonitorItemDto(
+    string Target,
+    bool Online,
+    double? AverageLatencyMs,
+    double LossPercentage,
+    string? Error);
+
+/// <summary>Snapshot returned by the monitoring endpoint.</summary>
+public sealed record MonitorResponse(
+    IReadOnlyList<MonitorItemDto> Items,
+    int Total,
+    int Online,
+    System.DateTimeOffset CheckedAt,
+    bool FromCache,
+    bool SourceExists,
+    string SourcePath);

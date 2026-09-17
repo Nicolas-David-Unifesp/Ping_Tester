@@ -1,0 +1,4 @@
+ip;descricao
+127.0.0.1;Loopback local
+8.8.8.8;Google DNS
+1.1.1.1;Cloudflare DNS

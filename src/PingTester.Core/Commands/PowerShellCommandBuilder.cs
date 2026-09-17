@@ -39,17 +39,25 @@ public static class PowerShellCommandBuilder
             target: host.Value);
     }
 
+    /// <summary>Absolute bounds accepted for a tracert hop limit.</summary>
+    public const int MinHopLimit = 1;
+    public const int MaxHopLimit = 255;
+
     /// <summary>
-    /// Builds: tracert -d -h 15 &lt;ip&gt;
-    /// -d skips reverse-DNS (faster); -h 15 caps the hop count.
+    /// Builds: tracert -d -h &lt;maxHops&gt; &lt;ip&gt;
+    /// -d skips reverse-DNS (faster); -h caps the hop count.
+    /// The hop limit defaults to <see cref="MaxHops"/> (15) and is clamped to
+    /// the valid 1..255 range. The monitoring tab passes a shorter limit (8).
     /// </summary>
-    public static PowerShellCommandSpec BuildTracert(HostAddress host)
+    public static PowerShellCommandSpec BuildTracert(HostAddress host, int maxHops = MaxHops)
     {
         ArgumentNullException.ThrowIfNull(host);
 
+        var hops = Math.Clamp(maxHops, MinHopLimit, MaxHopLimit);
+
         var args = new Dictionary<string, string>
         {
-            ["-h"] = MaxHops.ToString(),
+            ["-h"] = hops.ToString(),
         };
 
         return new PowerShellCommandSpec(

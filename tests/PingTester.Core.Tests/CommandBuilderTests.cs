@@ -45,10 +45,29 @@ public class CommandBuilderTests
     }
 
     [Test]
-    public void Tracert_LimitsHopsTo15()
+    public void Tracert_DefaultsToHopLimit15()
     {
         var spec = PowerShellCommandBuilder.BuildTracert(Host("1.1.1.1"));
         Assert.Equal("15", spec.Arguments["-h"]);
+    }
+
+    [Test]
+    public void Tracert_AcceptsCustomHopLimit()
+    {
+        // The monitoring tab uses a shorter trace (8 hops) for speed.
+        var spec = PowerShellCommandBuilder.BuildTracert(Host("1.1.1.1"), maxHops: 8);
+        Assert.Equal("8", spec.Arguments["-h"]);
+    }
+
+    [Test]
+    public void Tracert_ClampsHopLimitToSaneRange()
+    {
+        // Guard against absurd values; hop count must stay 1..255.
+        var tooLow = PowerShellCommandBuilder.BuildTracert(Host("1.1.1.1"), maxHops: 0);
+        Assert.Equal("1", tooLow.Arguments["-h"]);
+
+        var tooHigh = PowerShellCommandBuilder.BuildTracert(Host("1.1.1.1"), maxHops: 999);
+        Assert.Equal("255", tooHigh.Arguments["-h"]);
     }
 
     [Test]

@@ -15,14 +15,16 @@ namespace PingTester.Core.Tests;
 /// </summary>
 public class OrchestratorTests
 {
-    /// <summary>Fake executor: returns JSON based on which cmdlet was asked.</summary>
+    /// <summary>Fake executor: returns canned ping/tracert text output.</summary>
     private sealed class FakeExecutor : IPowerShellExecutor
     {
         public List<string> Executed { get; } = new();
+        public List<PowerShellCommandSpec> Specs { get; } = new();
 
         public Task<string> ExecuteAsync(PowerShellCommandSpec spec, CancellationToken cancellationToken = default)
         {
             Executed.Add(spec.Command);
+            Specs.Add(spec);
 
             // The fake now returns the classic ping.exe / tracert.exe TEXT
             // output (Portuguese), matching what the real executor captures.
@@ -116,5 +118,60 @@ Rastreamento concluído.",
     {
         public Task<string> ExecuteAsync(PowerShellCommandSpec spec, CancellationToken cancellationToken = default)
             => throw new System.InvalidOperationException("boom");
+    }
+
+    // ---- Monitoring tab: ping-only (fast) --------------------------------
+
+    [Test]
+    public void PingAll_RunsOnlyPing_NoTracert()
+    {
+        var fake = new FakeExecutor();
+        var orch = new NetworkTestOrchestrator(fake);
+
+        var results = orch.PingAllAsync(new[] { Host("8.8.8.8"), Host("1.1.1.1") })
+                          .GetAwaiter().GetResult();
+
+        Assert.Count(2, results);
+        Assert.Contains("ping", fake.Executed);
+        Assert.False(fake.Executed.Contains("tracert"),
+            "monitoring open must NOT run tracert (too slow)");
+    }
+
+    [Test]
+    public void PingAll_ReportsReachability()
+    {
+        var orch = new NetworkTestOrchestrator(new FakeExecutor());
+
+        var result = orch.PingAllAsync(new[] { Host("8.8.8.8") }).GetAwaiter().GetResult().Single();
+
+        Assert.NotNull(result.Ping);
+        Assert.True(result.Ping!.IsReachable);
+        Assert.Null(result.Trace); // no trace on the fast path
+    }
+
+    // ---- Monitoring tab: on-demand trace with custom hop limit -----------
+
+    [Test]
+    public void Trace_UsesRequestedHopLimit()
+    {
+        var fake = new FakeExecutor();
+        var orch = new NetworkTestOrchestrator(fake);
+
+        orch.TraceAsync(Host("8.8.8.8"), maxHops: 8).GetAwaiter().GetResult();
+
+        var traceSpec = fake.Specs.Single(s => s.Command == "tracert");
+        Assert.Equal("8", traceSpec.Arguments["-h"]);
+    }
+
+    [Test]
+    public void Trace_ReturnsParsedTrace()
+    {
+        var orch = new NetworkTestOrchestrator(new FakeExecutor());
+
+        var report = orch.TraceAsync(Host("8.8.8.8"), maxHops: 8).GetAwaiter().GetResult();
+
+        Assert.NotNull(report.Trace);
+        Assert.Count(2, report.Trace!.Hops);
+        Assert.Null(report.Ping); // trace-only path
     }
 }

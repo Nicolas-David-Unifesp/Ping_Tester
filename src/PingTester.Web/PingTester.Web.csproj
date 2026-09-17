@@ -5,6 +5,14 @@
     <ProjectReference Include="..\PingTester.Shell\PingTester.Shell.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Ship the monitored-hosts list next to the app; don't overwrite an
+         edited copy already present in the output folder. -->
+    <None Update="monitored-hosts.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>

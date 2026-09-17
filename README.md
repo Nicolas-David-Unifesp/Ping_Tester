@@ -71,6 +71,35 @@ dotnet run --project src/PingTester.Web
 |--------|------|-------|-----------|
 | `POST` | `/api/test` | `{"ips": "8.8.8.8\n1.1.1.1"}` | Testa IPs digitados. |
 | `POST` | `/api/test/upload` | `multipart/form-data`, campo `file` | Testa IPs de um CSV. |
+| `GET`  | `/api/monitor` | `?refresh=true` (opcional) | Aba de monitoramento: ping (só) da lista fixa, em paralelo, com cache curto. |
+| `GET`  | `/api/monitor/trace` | `?ip=8.8.8.8` | Tracert sob demanda (máx. 8 saltos) de um host. |
+
+## Aba de Monitoramento
+
+Uma segunda aba monitora uma **lista fixa de hosts** definida em um CSV no
+servidor. Ao abrir a aba, o app executa **apenas ping** de todos os hosts em
+paralelo (rápido, adequado a ~70 IPs) e mostra verde/vermelho. O **tracert**
+(limitado a **8 saltos**) roda **sob demanda**, ao clicar em "Ver rota".
+
+Configuração (todas opcionais, via `appsettings.json` ou variáveis de ambiente):
+
+| Chave | Padrão | Descrição |
+|-------|--------|-----------|
+| `Monitor:CsvPath` | `monitored-hosts.csv` (ao lado do app) | Arquivo com os hosts. |
+| `Monitor:CacheSeconds` | `30` | Duração do cache do resultado do ping. |
+| `Monitor:Parallelism` | `20` | Pings simultâneos. |
+| `Monitor:TraceHops` | `8` | Máximo de saltos do tracert sob demanda. |
+
+Formato do `monitored-hosts.csv` (mesmas regras do upload de CSV — IP em
+qualquer coluna, cabeçalho e células não-IP ignorados, `;` ou `,`):
+
+```
+ip;descricao
+127.0.0.1;Loopback local
+10.113.96.148;Servidor A
+```
+
+> O botão **Atualizar** ignora o cache e refaz a verredura na hora.
 
 Resposta:
 

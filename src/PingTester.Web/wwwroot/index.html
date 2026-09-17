@@ -9,53 +9,98 @@
 <body>
   <header>
     <h1>Ping Tester</h1>
-    <p class="subtitle">Teste de <strong>ping</strong> e <strong>tracert</strong> automatizado via PowerShell</p>
+    <p class="subtitle">Teste de <strong>ping</strong> e <strong>tracert</strong> automatizado</p>
   </header>
 
+  <nav class="tabs">
+    <button class="tab active" data-tab="manual" type="button">Teste manual</button>
+    <button class="tab" data-tab="monitor" type="button">Monitoramento</button>
+  </nav>
+
   <main>
-    <section class="card">
-      <h2>1. Informe os IPs</h2>
+    <!-- ================= ABA: TESTE MANUAL ================= -->
+    <div id="tab-manual" class="tab-panel">
+      <section class="card">
+        <h2>1. Informe os IPs</h2>
 
-      <label for="ips">Digite os IPs (um por linha, ou separados por vírgula/ponto e vírgula):</label>
-      <textarea id="ips" rows="6" placeholder="8.8.8.8&#10;1.1.1.1&#10;192.168.0.1"></textarea>
+        <label for="ips">Digite os IPs (um por linha, ou separados por vírgula/ponto e vírgula):</label>
+        <textarea id="ips" rows="6" placeholder="8.8.8.8&#10;1.1.1.1&#10;192.168.0.1"></textarea>
 
-      <div class="or">— ou —</div>
+        <div class="or">— ou —</div>
 
-      <label for="csv">Envie um arquivo CSV:</label>
-      <input type="file" id="csv" accept=".csv,text/csv" />
+        <label for="csv">Envie um arquivo CSV:</label>
+        <input type="file" id="csv" accept=".csv,text/csv" />
 
-      <div class="actions">
-        <button id="run" type="button">Testar</button>
-        <span id="status" class="status"></span>
-      </div>
-    </section>
+        <div class="actions">
+          <button id="run" type="button">Testar</button>
+          <span id="status" class="status"></span>
+        </div>
+      </section>
 
-    <section id="invalidSection" class="card hidden">
-      <h2>Entradas inválidas</h2>
-      <ul id="invalidList"></ul>
-    </section>
+      <section id="invalidSection" class="card hidden">
+        <h2>Entradas inválidas</h2>
+        <ul id="invalidList"></ul>
+      </section>
 
-    <section id="resultsSection" class="card hidden">
-      <h2>2. Resultados</h2>
-      <table id="resultsTable">
-        <thead>
-          <tr>
-            <th>IP / Host</th>
-            <th>Ping</th>
-            <th>Enviados</th>
-            <th>Recebidos</th>
-            <th>Perda</th>
-            <th>Latência média</th>
-            <th>Tracert (saltos)</th>
-          </tr>
-        </thead>
-        <tbody id="resultsBody"></tbody>
-      </table>
-    </section>
+      <section id="resultsSection" class="card hidden">
+        <h2>2. Resultados</h2>
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th>IP / Host</th>
+              <th>Ping</th>
+              <th>Enviados</th>
+              <th>Recebidos</th>
+              <th>Perda</th>
+              <th>Latência média</th>
+              <th>Tracert (saltos)</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </section>
+    </div>
+
+    <!-- ================= ABA: MONITORAMENTO ================= -->
+    <div id="tab-monitor" class="tab-panel hidden">
+      <section class="card">
+        <div class="monitor-head">
+          <div>
+            <h2>Monitoramento</h2>
+            <p class="subtitle" id="monitorSummary">Carregando...</p>
+          </div>
+          <button id="monitorRefresh" type="button">Atualizar</button>
+        </div>
+
+        <table id="monitorTable">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>IP / Host</th>
+              <th>Latência média</th>
+              <th>Perda</th>
+              <th>Tracert</th>
+            </tr>
+          </thead>
+          <tbody id="monitorBody"></tbody>
+        </table>
+      </section>
+    </div>
   </main>
 
+  <!-- Painel lateral do tracert sob demanda -->
+  <div id="tracePanel" class="trace-panel hidden">
+    <div class="trace-panel-inner">
+      <div class="trace-panel-head">
+        <h3 id="traceTitle">Tracert</h3>
+        <button id="traceClose" type="button" class="close">×</button>
+      </div>
+      <div id="traceBody" class="trace-panel-body"></div>
+    </div>
+  </div>
+
   <footer>
-    <small>Arquitetura Functional Core / Imperative Shell — o núcleo puro valida e interpreta; o shell executa o PowerShell.</small>
+    <small>Arquitetura Functional Core / Imperative Shell — o núcleo puro valida e interpreta; o shell executa ping/tracert.</small>
   </footer>
 
   <script src="app.js"></script>
