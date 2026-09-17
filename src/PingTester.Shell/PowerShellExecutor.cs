@@ -52,25 +52,31 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
         foreach (var sw in spec.Switches) ValidateToken(sw);
         if (spec.Target.Length > 0) ValidateToken(spec.Target);
 
-        // Run through cmd.exe so the executable (ping/tracert) resolves reliably
-        // from PATH even in a service/web context, and so `chcp 65001` forces
-        // UTF-8 output — which we then read as UTF-8. This is far more robust in
-        // a web app than launching ping.exe directly with the console encoding.
-        var innerCommand = BuildInnerCommandLine(spec);
-
+        // Launch the executable DIRECTLY. Using the ".exe" name makes PATH
+        // resolution reliable in a service/web context, and passing arguments
+        // via ArgumentList keeps them discrete (no shell, no injection). We do
+        // NOT force a StandardOutputEncoding — letting .NET use the default
+        // avoids the empty-capture problems seen with cmd.exe/chcp and with
+        // Console.OutputEncoding in a non-console app. Output is read fully with
+        // ReadToEndAsync below.
         var psi = new ProcessStartInfo
         {
-            FileName = "cmd.exe",
+            FileName = ResolveExecutable(spec.Command),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
         };
-        psi.ArgumentList.Add("/c");
-        // /c "chcp 65001>nul & <cmd> <args>"
-        psi.ArgumentList.Add($"chcp 65001>nul & {innerCommand}");
+
+        foreach (var kv in spec.Arguments)
+        {
+            psi.ArgumentList.Add(kv.Key);
+            psi.ArgumentList.Add(kv.Value);
+        }
+        foreach (var sw in spec.Switches)
+            psi.ArgumentList.Add(sw);
+        if (spec.Target.Length > 0)
+            psi.ArgumentList.Add(spec.Target);
 
         using var process = new Process { StartInfo = psi };
 
@@ -128,29 +134,26 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
             int? exit = null;
             try { exit = process.ExitCode; } catch { /* ignore */ }
             throw new InvalidOperationException(
-                $"'{spec.Command}' não produziu saída (cmd.exe exit={exit?.ToString() ?? "?"}). " +
-                $"Comando: {BuildInnerCommandLine(spec)}");
+                $"'{spec.Command}' não produziu saída (exit={exit?.ToString() ?? "?"}). " +
+                $"Executável: {ResolveExecutable(spec.Command)}, alvo: {spec.Target}");
         }
 
         return combined;
     }
 
     /// <summary>
-    /// Builds the "&lt;exe&gt; &lt;options&gt; &lt;switches&gt; &lt;target&gt;"
-    /// string passed to cmd.exe /c. All tokens have already been validated to
-    /// contain only safe characters (alphanumerics and . : - _ /), so there are
-    /// no spaces or shell metacharacters to escape.
+    /// Resolves the executable name. On Windows, appending ".exe" makes PATH
+    /// resolution reliable when launched from a service/web host. Elsewhere the
+    /// bare name is used.
     /// </summary>
-    private static string BuildInnerCommandLine(PowerShellCommandSpec spec)
+    private static string ResolveExecutable(string command)
     {
-        var sb = new StringBuilder(spec.Command);
-        foreach (var kv in spec.Arguments)
-            sb.Append(' ').Append(kv.Key).Append(' ').Append(kv.Value);
-        foreach (var sw in spec.Switches)
-            sb.Append(' ').Append(sw);
-        if (spec.Target.Length > 0)
-            sb.Append(' ').Append(spec.Target);
-        return sb.ToString();
+        if (System.OperatingSystem.IsWindows() &&
+            !command.EndsWith(".exe", System.StringComparison.OrdinalIgnoreCase))
+        {
+            return command + ".exe";
+        }
+        return command;
     }
 
     /// <summary>
