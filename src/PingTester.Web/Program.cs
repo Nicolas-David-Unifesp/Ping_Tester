@@ -88,7 +88,7 @@ app.MapGet("/api/monitor/detail", async (string ip, MonitorService monitor,
         return Results.BadRequest(new { message = "IP inválido." });
 
     var report = await orch.DetailAsync(host, monitor.TraceHops, ct);
-    return Results.Ok(ResultMapper.ToDto(report));
+    return Results.Ok(ResultMapper.ToDetailDto(report));
 });
 
 app.Run();

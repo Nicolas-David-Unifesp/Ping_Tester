@@ -296,13 +296,16 @@ async function openDetail(ip) {
   }
 }
 
-function renderDetail(r) {
+function renderDetail(detail) {
+  // The detail endpoint returns { result, rawPingOutput, rawTraceOutput }.
+  const r = detail.result || detail;
+
   if (r.error) {
     traceBody.innerHTML = `<p class="error-text">Erro: ${escapeHtml(r.error)}</p>`;
     return;
   }
 
-  // --- Ping section (full 4-packet ping) ---
+  // --- Ping summary (full 4-packet ping) ---
   const pingBadge = r.pingReachable
     ? `<span class="badge ok">Alcançável</span>`
     : `<span class="badge fail">Sem resposta</span>`;
@@ -317,7 +320,7 @@ function renderDetail(r) {
       <li>Latência média: <strong>${latency}</strong></li>
     </ul>`;
 
-  // --- Tracert section ---
+  // --- Tracert summary ---
   let traceHtml = `<h4>Tracert</h4>`;
   if (!(r.hops || []).length) {
     traceHtml += `<p class="error-text">Sem saltos retornados.</p>`;
@@ -331,5 +334,46 @@ function renderDetail(r) {
     traceHtml += `${reached}<ol class="hops trace-hops">${rows}</ol>`;
   }
 
-  traceBody.innerHTML = pingHtml + traceHtml;
+  // --- Verbatim console output (copy/paste) ---
+  const rawHtml =
+    rawBlock("Saída do ping", detail.rawPingOutput) +
+    rawBlock("Saída do tracert", detail.rawTraceOutput);
+
+  traceBody.innerHTML = pingHtml + traceHtml + rawHtml;
+
+  // Wire copy buttons (store text on the element to avoid escaping issues).
+  traceBody.querySelectorAll(".copy-btn").forEach((btn, i) => {
+    btn.addEventListener("click", () => copyText(btn));
+  });
+}
+
+function rawBlock(title, text) {
+  if (!text) return "";
+  // Stash the raw text in a data attribute-safe way via <pre> content.
+  return `
+    <div class="raw-block">
+      <div class="raw-head">
+        <h4>${escapeHtml(title)}</h4>
+        <button class="copy-btn link-btn" type="button">Copiar</button>
+      </div>
+      <pre class="raw-output">${escapeHtml(text)}</pre>
+    </div>`;
+}
+
+async function copyText(btn) {
+  const pre = btn.closest(".raw-block").querySelector(".raw-output");
+  const text = pre.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    const original = btn.textContent;
+    btn.textContent = "Copiado!";
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  } catch {
+    // Fallback: select the text so the user can copy manually.
+    const range = document.createRange();
+    range.selectNodeContents(pre);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
 }

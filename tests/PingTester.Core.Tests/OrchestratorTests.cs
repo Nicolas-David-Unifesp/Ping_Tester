@@ -204,4 +204,29 @@ Rastreamento concluído.",
         Assert.NotNull(report.Trace);
         Assert.Count(2, report.Trace!.Hops);
     }
+
+    [Test]
+    public void Detail_PreservesRawConsoleOutput()
+    {
+        var orch = new NetworkTestOrchestrator(new FakeExecutor());
+
+        var report = orch.DetailAsync(Host("8.8.8.8"), maxHops: 15).GetAwaiter().GetResult();
+
+        Assert.NotNull(report.RawPingOutput);
+        Assert.True(report.RawPingOutput!.Contains("Resposta de"), "raw ping text preserved");
+        Assert.NotNull(report.RawTraceOutput);
+        Assert.True(report.RawTraceOutput!.Contains("Rastreando"), "raw tracert text preserved");
+    }
+
+    [Test]
+    public void FastPing_DoesNotCarryRawOutput()
+    {
+        // The fast sweep must stay lean — no verbatim text shipped per host.
+        var orch = new NetworkTestOrchestrator(new FakeExecutor());
+
+        var result = orch.PingAllAsync(new[] { Host("8.8.8.8") }).GetAwaiter().GetResult().Single();
+
+        Assert.Null(result.RawPingOutput);
+        Assert.Null(result.RawTraceOutput);
+    }
 }

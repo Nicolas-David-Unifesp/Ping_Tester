@@ -27,6 +27,16 @@ public static class ResultMapper
             Error: report.Error);
     }
 
+    /// <summary>
+    /// Detail mapping for the monitoring tab: includes the verbatim console
+    /// output alongside the parsed result.
+    /// </summary>
+    public static MonitorDetailDto ToDetailDto(HostTestReport report) =>
+        new(
+            Result: ToDto(report),
+            RawPingOutput: report.RawPingOutput,
+            RawTraceOutput: report.RawTraceOutput);
+
     public static IReadOnlyList<InvalidInputDto> ToInvalid(IReadOnlyList<IpParseError> errors) =>
         errors.Select(e => new InvalidInputDto(e.RawValue, e.Reason)).ToList();
 }

@@ -90,7 +90,9 @@ public sealed class NetworkTestOrchestrator
             var ping = PingOutputParser.Parse(host.Value, pingText);
             var trace = TracertOutputParser.Parse(host.Value, traceText);
 
-            return new HostTestReport(host.Value, ping, trace, Error: null);
+            // Detail path preserves the verbatim console output for display.
+            return new HostTestReport(host.Value, ping, trace, Error: null,
+                RawPingOutput: pingText, RawTraceOutput: traceText);
         }
         catch (OperationCanceledException)
         {

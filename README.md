@@ -72,7 +72,7 @@ dotnet run --project src/PingTester.Web
 | `POST` | `/api/test` | `{"ips": "8.8.8.8\n1.1.1.1"}` | Testa IPs digitados. |
 | `POST` | `/api/test/upload` | `multipart/form-data`, campo `file` | Testa IPs de um CSV. |
 | `GET`  | `/api/monitor` | `?refresh=true` (opcional) | Aba de monitoramento: **ping rápido** (2 pacotes, timeout 1s) da lista fixa, em paralelo, com cache curto. |
-| `GET`  | `/api/monitor/detail` | `?ip=8.8.8.8` | Detalhe sob demanda: **ping completo** (4 pacotes) + **tracert** (máx. 15 saltos). |
+| `GET`  | `/api/monitor/detail` | `?ip=8.8.8.8` | Detalhe sob demanda: **ping completo** (4 pacotes) + **tracert** (máx. 15 saltos), incluindo a **saída bruta** (texto literal) de ambos. |
 
 ## Aba de Monitoramento
 
@@ -81,7 +81,9 @@ servidor. Ao abrir a aba, o app executa um **ping rápido** (2 pacotes, timeout
 de 1s) de todos os hosts em paralelo — otimizado para listas com muitos IPs
 offline — e mostra verde/vermelho. Ao clicar em **"Ver detalhes"**, roda sob
 demanda um **ping completo** (4 pacotes) e um **tracert** (máx. 15 saltos).
-A tabela é **paginada em 15 hosts por página**.
+O painel mostra um resumo organizado **e** a **saída bruta** (o texto literal do
+ping/tracert, como no CMD), com botão **Copiar**. A tabela é **paginada em 15
+hosts por página**.
 
 Configuração (todas opcionais, via `appsettings.json` ou variáveis de ambiente):
 

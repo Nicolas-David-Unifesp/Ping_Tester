@@ -47,3 +47,13 @@ public sealed record MonitorResponse(
     bool FromCache,
     bool SourceExists,
     string SourcePath);
+
+
+/// <summary>
+/// Detail view for the monitoring tab: the flat ping+trace result plus the
+/// verbatim console output of ping.exe / tracert.exe for display.
+/// </summary>
+public sealed record MonitorDetailDto(
+    HostResultDto Result,
+    string? RawPingOutput,
+    string? RawTraceOutput);
