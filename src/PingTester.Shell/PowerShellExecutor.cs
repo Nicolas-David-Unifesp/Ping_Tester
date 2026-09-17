@@ -31,56 +31,46 @@ namespace PingTester.Shell;
 public sealed class PowerShellExecutor : IPowerShellExecutor
 {
     private readonly TimeSpan _timeout;
-    private readonly Encoding _outputEncoding;
 
     /// <param name="executable">
     /// Kept for backwards compatibility with existing DI wiring; ignored now
-    /// that we invoke ping/tracert directly rather than through a shell.
+    /// that we invoke ping/tracert via cmd.exe.
     /// </param>
     /// <param name="timeout">Per-command timeout (tracert can be slow).</param>
     public PowerShellExecutor(string executable = "powershell", TimeSpan? timeout = null)
     {
         _timeout = timeout ?? TimeSpan.FromSeconds(120);
-        _outputEncoding = ResolveOemEncoding();
     }
 
     public async Task<string> ExecuteAsync(PowerShellCommandSpec spec, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(spec);
 
+        // Validate every token first (defence in depth — even though we build
+        // the argument list carefully below).
+        foreach (var kv in spec.Arguments) { ValidateToken(kv.Key); ValidateToken(kv.Value); }
+        foreach (var sw in spec.Switches) ValidateToken(sw);
+        if (spec.Target.Length > 0) ValidateToken(spec.Target);
+
+        // Run through cmd.exe so the executable (ping/tracert) resolves reliably
+        // from PATH even in a service/web context, and so `chcp 65001` forces
+        // UTF-8 output — which we then read as UTF-8. This is far more robust in
+        // a web app than launching ping.exe directly with the console encoding.
+        var innerCommand = BuildInnerCommandLine(spec);
+
         var psi = new ProcessStartInfo
         {
-            FileName = spec.Command, // "ping" or "tracert" — resolved from PATH
+            FileName = "cmd.exe",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
-            StandardOutputEncoding = _outputEncoding,
-            StandardErrorEncoding = _outputEncoding,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
-
-        // Named options: e.g. "-n" "4".
-        foreach (var kv in spec.Arguments)
-        {
-            ValidateToken(kv.Key);
-            ValidateToken(kv.Value);
-            psi.ArgumentList.Add(kv.Key);
-            psi.ArgumentList.Add(kv.Value);
-        }
-
-        // Valueless switches: e.g. "-d".
-        foreach (var sw in spec.Switches)
-        {
-            ValidateToken(sw);
-            psi.ArgumentList.Add(sw);
-        }
-
-        // Positional target (the IP) goes LAST: e.g. "ping -n 4 8.8.8.8".
-        if (spec.Target.Length > 0)
-        {
-            ValidateToken(spec.Target);
-            psi.ArgumentList.Add(spec.Target);
-        }
+        psi.ArgumentList.Add("/c");
+        // /c "chcp 65001>nul & <cmd> <args>"
+        psi.ArgumentList.Add($"chcp 65001>nul & {innerCommand}");
 
         using var process = new Process { StartInfo = psi };
         var stdout = new StringBuilder();
@@ -133,37 +123,41 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
 
         if (string.IsNullOrWhiteSpace(combined))
         {
-            // Truly nothing came back — treat as an execution failure so the
-            // caller can report it.
+            // Truly nothing came back — surface a DIAGNOSTIC error so we can see
+            // why (exit code, what was launched) instead of a silent blank.
+            int? exit = null;
+            try { exit = process.ExitCode; } catch { /* ignore */ }
             throw new InvalidOperationException(
-                $"'{spec.Command}' não produziu saída.");
+                $"'{spec.Command}' não produziu saída (cmd.exe exit={exit?.ToString() ?? "?"}). " +
+                $"Comando: {BuildInnerCommandLine(spec)}");
         }
 
         return combined;
     }
 
     /// <summary>
-    /// Resolves the console OEM encoding used by ping/tracert. On Windows the
-    /// process console encoding already reflects the OEM code page (e.g. 850 in
-    /// Brazilian Windows), so <see cref="Console.OutputEncoding"/> is correct.
-    /// Falls back to UTF-8 elsewhere.
+    /// Builds the "&lt;exe&gt; &lt;options&gt; &lt;switches&gt; &lt;target&gt;"
+    /// string passed to cmd.exe /c. All tokens have already been validated to
+    /// contain only safe characters (alphanumerics and . : - _ /), so there are
+    /// no spaces or shell metacharacters to escape.
     /// </summary>
-    private static Encoding ResolveOemEncoding()
+    private static string BuildInnerCommandLine(PowerShellCommandSpec spec)
     {
-        try
-        {
-            return Console.OutputEncoding;
-        }
-        catch
-        {
-            return Encoding.UTF8;
-        }
+        var sb = new StringBuilder(spec.Command);
+        foreach (var kv in spec.Arguments)
+            sb.Append(' ').Append(kv.Key).Append(' ').Append(kv.Value);
+        foreach (var sw in spec.Switches)
+            sb.Append(' ').Append(sw);
+        if (spec.Target.Length > 0)
+            sb.Append(' ').Append(spec.Target);
+        return sb.ToString();
     }
 
     /// <summary>
     /// Defence in depth: allow only plain host/option tokens (alphanumerics and
-    /// . : - _ /). Reject anything that could be abused, even though arguments
-    /// are already passed as discrete process args.
+    /// . : - _ /). Reject anything that could be abused. Because tokens are
+    /// restricted to these characters, the command line assembled for cmd.exe
+    /// contains no spaces-in-values or shell metacharacters.
     /// </summary>
     private static void ValidateToken(string value)
     {
