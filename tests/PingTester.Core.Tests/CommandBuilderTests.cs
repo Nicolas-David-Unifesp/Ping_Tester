@@ -107,6 +107,15 @@ public class CommandBuilderTests
     }
 
     [Test]
+    public void Tracert_SetsPerHopTimeout()
+    {
+        // Per-hop timeout (-w) keeps tracert from hanging on unresponsive hops,
+        // which is what happens on offline destinations.
+        var spec = PowerShellCommandBuilder.BuildTracert(Host("1.1.1.1"));
+        Assert.Equal("1000", spec.Arguments["-w"]);
+    }
+
+    [Test]
     public void Tracert_CarriesTargetAsPositional()
     {
         var spec = PowerShellCommandBuilder.BuildTracert(Host("1.1.1.1"));

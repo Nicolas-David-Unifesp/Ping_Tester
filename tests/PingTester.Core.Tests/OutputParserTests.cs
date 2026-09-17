@@ -235,4 +235,24 @@ Rastreamento concluído.";
         Assert.Empty(result.Hops);
         Assert.False(result.DestinationReached);
     }
+
+    [Test]
+    public void PartialOutput_WithInterruptedTrailer_ParsesHopsIgnoresTrailer()
+    {
+        // When a slow tracert is interrupted, the executor appends a trailer
+        // line. The parser should still read the real hops and ignore it.
+        var text =
+@"Rastreando a rota para 8.8.8.8 com no máximo 15 saltos
+
+  1    <1 ms    <1 ms    <1 ms  10.181.44.1
+  2     *        *        *     Esgotado o tempo limite do pedido.
+[Interrompido: 'tracert' excedeu o tempo limite.]";
+
+        var result = TracertOutputParser.Parse("8.8.8.8", text);
+
+        Assert.Count(2, result.Hops);
+        Assert.Equal("10.181.44.1", result.Hops[0].Address);
+        Assert.Equal("", result.Hops[1].Address);
+        Assert.False(result.DestinationReached);
+    }
 }

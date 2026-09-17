@@ -100,8 +100,8 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();
 
-        string stdoutText;
-        string stderrText;
+        string stdoutText = "";
+        string stderrText = "";
         try
         {
             stdoutText = await stdoutTask.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
@@ -110,7 +110,18 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
         }
         catch (OperationCanceledException)
         {
+            // Timed out. Kill the process, but SALVAGE whatever partial output
+            // was already produced (a long tracert on an offline host still
+            // emits useful hop lines before we give up).
             TryKill(process);
+
+            var partial = await TryReadCompleted(stdoutTask).ConfigureAwait(false);
+            var partialErr = await TryReadCompleted(stderrTask).ConfigureAwait(false);
+            var salvaged = string.IsNullOrWhiteSpace(partial) ? partialErr : partial;
+
+            if (!string.IsNullOrWhiteSpace(salvaged))
+                return salvaged + $"\n[Interrompido: '{spec.Command}' excedeu o tempo limite.]";
+
             throw new TimeoutException($"O comando '{spec.Command}' excedeu o tempo limite.");
         }
 
@@ -176,5 +187,22 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
     {
         try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
         catch { /* best effort */ }
+    }
+
+    /// <summary>
+    /// After the process is killed its output stream closes, so the pending
+    /// ReadToEndAsync completes with whatever was buffered. Give it a brief
+    /// moment and return that partial text (empty on any failure).
+    /// </summary>
+    private static async Task<string> TryReadCompleted(Task<string> readTask)
+    {
+        try
+        {
+            var done = await Task.WhenAny(readTask, Task.Delay(1500)).ConfigureAwait(false);
+            if (done == readTask)
+                return readTask.Result ?? "";
+        }
+        catch { /* ignore */ }
+        return "";
     }
 }

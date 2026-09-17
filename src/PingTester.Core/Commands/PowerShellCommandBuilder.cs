@@ -58,10 +58,15 @@ public static class PowerShellCommandBuilder
     public const int MaxHopLimit = 255;
 
     /// <summary>
-    /// Builds: tracert -d -h &lt;maxHops&gt; &lt;ip&gt;
-    /// -d skips reverse-DNS (faster); -h caps the hop count.
+    /// <summary>Per-hop timeout (ms) for tracert. Keeps offline destinations
+    /// from hanging on every unresponsive hop.</summary>
+    public const int TracertPerHopTimeoutMs = 1000;
+
+    /// Builds: tracert -d -h &lt;maxHops&gt; -w 1000 &lt;ip&gt;
+    /// -d skips reverse-DNS (faster); -h caps the hop count; -w bounds the wait
+    /// per hop so unresponsive/offline routes finish quickly.
     /// The hop limit defaults to <see cref="MaxHops"/> (15) and is clamped to
-    /// the valid 1..255 range. The monitoring tab passes a shorter limit (8).
+    /// the valid 1..255 range.
     /// </summary>
     public static PowerShellCommandSpec BuildTracert(HostAddress host, int maxHops = MaxHops)
     {
@@ -72,6 +77,7 @@ public static class PowerShellCommandBuilder
         var args = new Dictionary<string, string>
         {
             ["-h"] = hops.ToString(),
+            ["-w"] = TracertPerHopTimeoutMs.ToString(),
         };
 
         return new PowerShellCommandSpec(
