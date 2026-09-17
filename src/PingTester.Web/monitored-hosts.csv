@@ -1,5 +1,7 @@
 ip;escola;dispositivo
-127.0.0.1;Sede/Servidor local;Loopback
-10.113.96.148;EMEF Exemplo A;Roteador principal
-192.168.0.10;EMEF Exemplo A;Switch sala 3
-1.1.1.1;EEEP Exemplo B;Access Point pátio
+10.121.181.41;Alceu Maynard Araujo Professor;DVR_1
+10.121.181.46;Alceu Maynard Araujo Professor;DVR_2
+10.121.181.47;Alceu Maynard Araujo Professor;DVR_3
+10.121.181.48;Alceu Maynard Araujo Professor;DVR_4
+10.110.37.75;Francisco Pereira Da Silva Professor;DVR_2
+10.110.39.142;Ayr Picanco Barbosa de Almeida Professora;DVR_1
