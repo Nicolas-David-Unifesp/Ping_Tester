@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ping Tester</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Ping Tester</h1>
+    <p class="subtitle">Teste de <strong>ping</strong> e <strong>tracert</strong> automatizado via PowerShell</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1. Informe os IPs</h2>
+
+      <label for="ips">Digite os IPs (um por linha, ou separados por vírgula/ponto e vírgula):</label>
+      <textarea id="ips" rows="6" placeholder="8.8.8.8&#10;1.1.1.1&#10;192.168.0.1"></textarea>
+
+      <div class="or">— ou —</div>
+
+      <label for="csv">Envie um arquivo CSV:</label>
+      <input type="file" id="csv" accept=".csv,text/csv" />
+
+      <div class="actions">
+        <button id="run" type="button">Testar</button>
+        <span id="status" class="status"></span>
+      </div>
+    </section>
+
+    <section id="invalidSection" class="card hidden">
+      <h2>Entradas inválidas</h2>
+      <ul id="invalidList"></ul>
+    </section>
+
+    <section id="resultsSection" class="card hidden">
+      <h2>2. Resultados</h2>
+      <table id="resultsTable">
+        <thead>
+          <tr>
+            <th>IP / Host</th>
+            <th>Ping</th>
+            <th>Enviados</th>
+            <th>Recebidos</th>
+            <th>Perda</th>
+            <th>Latência média</th>
+            <th>Tracert (saltos)</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <small>Arquitetura Functional Core / Imperative Shell — o núcleo puro valida e interpreta; o shell executa o PowerShell.</small>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
