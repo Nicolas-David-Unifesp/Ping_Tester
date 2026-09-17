@@ -138,6 +138,19 @@ Rastreamento concluído.",
     }
 
     [Test]
+    public void PingAll_UsesFastPing_TwoPacketsShortTimeout()
+    {
+        var fake = new FakeExecutor();
+        var orch = new NetworkTestOrchestrator(fake);
+
+        orch.PingAllAsync(new[] { Host("8.8.8.8") }).GetAwaiter().GetResult();
+
+        var pingSpec = fake.Specs.Single(s => s.Command == "ping");
+        Assert.Equal("2", pingSpec.Arguments["-n"]);          // 2 packets
+        Assert.Equal("1000", pingSpec.Arguments["-w"]);       // 1s timeout
+    }
+
+    [Test]
     public void PingAll_ReportsReachability()
     {
         var orch = new NetworkTestOrchestrator(new FakeExecutor());
@@ -149,29 +162,46 @@ Rastreamento concluído.",
         Assert.Null(result.Trace); // no trace on the fast path
     }
 
-    // ---- Monitoring tab: on-demand trace with custom hop limit -----------
+    // ---- Monitoring tab: on-demand DETAIL (full ping + tracert) ----------
 
     [Test]
-    public void Trace_UsesRequestedHopLimit()
+    public void Detail_RunsFullPingAndTracert()
     {
         var fake = new FakeExecutor();
         var orch = new NetworkTestOrchestrator(fake);
 
-        orch.TraceAsync(Host("8.8.8.8"), maxHops: 8).GetAwaiter().GetResult();
+        orch.DetailAsync(Host("8.8.8.8"), maxHops: 15).GetAwaiter().GetResult();
 
-        var traceSpec = fake.Specs.Single(s => s.Command == "tracert");
-        Assert.Equal("8", traceSpec.Arguments["-h"]);
+        Assert.Contains("ping", fake.Executed);
+        Assert.Contains("tracert", fake.Executed);
+
+        // Detail ping is the FULL ping: 4 packets, no forced short timeout.
+        var pingSpec = fake.Specs.Single(s => s.Command == "ping");
+        Assert.Equal("4", pingSpec.Arguments["-n"]);
+        Assert.False(pingSpec.Arguments.ContainsKey("-w"), "detail ping is full, no -w");
     }
 
     [Test]
-    public void Trace_ReturnsParsedTrace()
+    public void Detail_UsesRequestedHopLimit()
+    {
+        var fake = new FakeExecutor();
+        var orch = new NetworkTestOrchestrator(fake);
+
+        orch.DetailAsync(Host("8.8.8.8"), maxHops: 15).GetAwaiter().GetResult();
+
+        var traceSpec = fake.Specs.Single(s => s.Command == "tracert");
+        Assert.Equal("15", traceSpec.Arguments["-h"]);
+    }
+
+    [Test]
+    public void Detail_ReturnsBothPingAndTrace()
     {
         var orch = new NetworkTestOrchestrator(new FakeExecutor());
 
-        var report = orch.TraceAsync(Host("8.8.8.8"), maxHops: 8).GetAwaiter().GetResult();
+        var report = orch.DetailAsync(Host("8.8.8.8"), maxHops: 15).GetAwaiter().GetResult();
 
+        Assert.NotNull(report.Ping);
         Assert.NotNull(report.Trace);
         Assert.Count(2, report.Trace!.Hops);
-        Assert.Null(report.Ping); // trace-only path
     }
 }

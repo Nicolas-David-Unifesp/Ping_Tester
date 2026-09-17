@@ -17,20 +17,34 @@ public static class PowerShellCommandBuilder
     /// <summary>Maximum number of hops for the traceroute.</summary>
     public const int MaxHops = 15;
 
+    /// <summary>Bounds accepted for the ping packet count.</summary>
+    public const int MinPingCount = 1;
+    public const int MaxPingCount = 10;
+
     /// <summary>
-    /// Builds: ping -n 4 &lt;ip&gt;
+    /// Builds: ping -n &lt;count&gt; [-w &lt;timeoutMs&gt;] &lt;ip&gt;
     /// Uses the classic ping.exe (works via ICMP, same as the CMD prompt) —
     /// the Windows PowerShell 5.1 Test-Connection cmdlet fails via WMI on the
     /// target environment.
+    ///
+    /// <paramref name="count"/> defaults to 4 (full ping, manual tab) and is
+    /// clamped to 1..10. <paramref name="timeoutMs"/> is optional: when set, it
+    /// adds "-w" so that unresponsive hosts give up quickly — the fast
+    /// monitoring sweep passes count=2, timeoutMs=1000.
     /// </summary>
-    public static PowerShellCommandSpec BuildPing(HostAddress host)
+    public static PowerShellCommandSpec BuildPing(HostAddress host, int count = PingCount, int? timeoutMs = null)
     {
         ArgumentNullException.ThrowIfNull(host);
 
+        var packets = Math.Clamp(count, MinPingCount, MaxPingCount);
+
         var args = new Dictionary<string, string>
         {
-            ["-n"] = PingCount.ToString(),
+            ["-n"] = packets.ToString(),
         };
+
+        if (timeoutMs is int ms && ms > 0)
+            args["-w"] = ms.ToString();
 
         return new PowerShellCommandSpec(
             command: "ping",

@@ -194,3 +194,38 @@ footer { text-align: center; color: var(--muted); padding: 2rem 1rem; }
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+
+/* ================== Pagination ================== */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.pager button {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--card-border);
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+}
+.pager button:hover:not(:disabled) { background: rgba(56,189,248,0.1); }
+
+/* ============== Detail panel stats ============== */
+.trace-panel-body h4 {
+  margin: 1.2rem 0 0.4rem;
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+.trace-panel-body h4:first-child { margin-top: 0; }
+.detail-stats {
+  list-style: none;
+  padding: 0;
+  margin: 0.3rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.detail-stats li { margin: 0.15rem 0; }
+.detail-stats strong { color: var(--text); }

@@ -26,8 +26,8 @@ builder.Services.AddSingleton(sp =>
 var monitorCsv = builder.Configuration["Monitor:CsvPath"]
     ?? Path.Combine(AppContext.BaseDirectory, "monitored-hosts.csv");
 var monitorCacheSeconds = builder.Configuration.GetValue<int?>("Monitor:CacheSeconds") ?? 30;
-var monitorParallelism = builder.Configuration.GetValue<int?>("Monitor:Parallelism") ?? 20;
-var monitorTraceHops = builder.Configuration.GetValue<int?>("Monitor:TraceHops") ?? 8;
+var monitorParallelism = builder.Configuration.GetValue<int?>("Monitor:Parallelism") ?? 40;
+var monitorTraceHops = builder.Configuration.GetValue<int?>("Monitor:TraceHops") ?? 15;
 
 builder.Services.AddSingleton(_ => new MonitoredHostsRepository(monitorCsv));
 builder.Services.AddSingleton(sp => new MonitorService(
@@ -79,15 +79,15 @@ app.MapGet("/api/monitor", async (bool? refresh, MonitorService monitor, Cancell
     return Results.Ok(snapshot);
 });
 
-// --- Monitoring: on-demand tracert (short hop limit) for one host ----------
-app.MapGet("/api/monitor/trace", async (string ip, MonitorService monitor,
+// --- Monitoring: on-demand DETAIL (full ping + tracert) for one host -------
+app.MapGet("/api/monitor/detail", async (string ip, MonitorService monitor,
     NetworkTestOrchestrator orch, CancellationToken ct) =>
 {
     var host = HostAddress.TryCreate(ip ?? "");
     if (host is null)
         return Results.BadRequest(new { message = "IP inválido." });
 
-    var report = await orch.TraceAsync(host, monitor.TraceHops, ct);
+    var report = await orch.DetailAsync(host, monitor.TraceHops, ct);
     return Results.Ok(ResultMapper.ToDto(report));
 });
 

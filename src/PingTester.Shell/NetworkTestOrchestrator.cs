@@ -24,6 +24,11 @@ public sealed class NetworkTestOrchestrator
     private readonly IPowerShellExecutor _executor;
     private readonly int _maxParallelism;
 
+    /// <summary>Fast monitoring ping: fewer packets, short per-packet timeout,
+    /// so offline hosts fail quickly.</summary>
+    public const int FastPingCount = 2;
+    public const int FastPingTimeoutMs = 1000;
+
     public NetworkTestOrchestrator(IPowerShellExecutor executor, int maxParallelism = 4)
     {
         _executor = executor ?? throw new ArgumentNullException(nameof(executor));
@@ -62,10 +67,11 @@ public sealed class NetworkTestOrchestrator
     }
 
     /// <summary>
-    /// ON-DEMAND path for the monitoring tab: runs tracert for a single host
-    /// with a custom hop limit (the monitoring tab uses 8). Ping is not run.
+    /// ON-DEMAND detail for the monitoring tab: runs a FULL ping (4 packets,
+    /// normal timeout) AND a tracert (custom hop limit, default 15) for a single
+    /// host, returning both. Used when the user opens a host's details.
     /// </summary>
-    public async Task<HostTestReport> TraceAsync(
+    public async Task<HostTestReport> DetailAsync(
         HostAddress host,
         int maxHops = PowerShellCommandBuilder.MaxHops,
         CancellationToken cancellationToken = default)
@@ -74,10 +80,17 @@ public sealed class NetworkTestOrchestrator
 
         try
         {
+            // Full ping (default 4 packets, no forced short timeout).
+            var pingSpec = PowerShellCommandBuilder.BuildPing(host);
             var traceSpec = PowerShellCommandBuilder.BuildTracert(host, maxHops);
+
+            var pingText = await _executor.ExecuteAsync(pingSpec, cancellationToken).ConfigureAwait(false);
             var traceText = await _executor.ExecuteAsync(traceSpec, cancellationToken).ConfigureAwait(false);
+
+            var ping = PingOutputParser.Parse(host.Value, pingText);
             var trace = TracertOutputParser.Parse(host.Value, traceText);
-            return new HostTestReport(host.Value, Ping: null, Trace: trace, Error: null);
+
+            return new HostTestReport(host.Value, ping, trace, Error: null);
         }
         catch (OperationCanceledException)
         {
@@ -145,7 +158,8 @@ public sealed class NetworkTestOrchestrator
     {
         try
         {
-            var pingSpec = PowerShellCommandBuilder.BuildPing(host);
+            // Fast ping: 2 packets, 1s per-packet timeout.
+            var pingSpec = PowerShellCommandBuilder.BuildPing(host, FastPingCount, FastPingTimeoutMs);
             var pingText = await _executor.ExecuteAsync(pingSpec, ct).ConfigureAwait(false);
             var ping = PingOutputParser.Parse(host.Value, pingText);
             return new HostTestReport(host.Value, ping, Trace: null, Error: null);

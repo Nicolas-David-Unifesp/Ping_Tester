@@ -164,7 +164,13 @@ const monitorRefreshBtn = $("monitorRefresh");
 const monitorSummary = $("monitorSummary");
 const monitorBody = $("monitorBody");
 
+const PAGE_SIZE = 15;
+let monitorItems = [];   // full list from the server
+let monitorPage = 0;     // current page index (0-based)
+
 monitorRefreshBtn.addEventListener("click", () => loadMonitor(true));
+$("pagerPrev").addEventListener("click", () => changePage(-1));
+$("pagerNext").addEventListener("click", () => changePage(1));
 
 async function loadMonitor(forceRefresh) {
   monitorRefreshBtn.disabled = true;
@@ -186,15 +192,19 @@ async function loadMonitor(forceRefresh) {
 
 function renderMonitor(data) {
   monitorBody.innerHTML = "";
+  monitorItems = data.items || [];
+  monitorPage = 0;
 
   if (!data.sourceExists) {
     monitorSummary.textContent =
       "Arquivo de monitoramento não encontrado: " + (data.sourcePath || "");
+    renderPager();
     return;
   }
 
-  if ((data.items || []).length === 0) {
+  if (monitorItems.length === 0) {
     monitorSummary.textContent = "Nenhum host na lista de monitoramento.";
+    renderPager();
     return;
   }
 
@@ -203,7 +213,16 @@ function renderMonitor(data) {
   monitorSummary.textContent =
     `${data.online}/${data.total} online — verificado às ${when}${cacheNote}`;
 
-  for (const item of data.items) {
+  renderMonitorPage();
+}
+
+function renderMonitorPage() {
+  monitorBody.innerHTML = "";
+
+  const start = monitorPage * PAGE_SIZE;
+  const pageItems = monitorItems.slice(start, start + PAGE_SIZE);
+
+  for (const item of pageItems) {
     const tr = document.createElement("tr");
 
     const statusBadge = item.online
@@ -218,58 +237,99 @@ function renderMonitor(data) {
       <td>${escapeHtml(item.target)}</td>
       <td>${latency}</td>
       <td>${loss}</td>
-      <td><button class="link-btn" data-ip="${escapeHtml(item.target)}" type="button">Ver rota</button></td>`;
+      <td><button class="link-btn" data-ip="${escapeHtml(item.target)}" type="button">Ver detalhes</button></td>`;
     monitorBody.appendChild(tr);
   }
 
-  // Wire the per-row "Ver rota" (tracert on demand) buttons.
+  // Wire the per-row "Ver detalhes" (full ping + tracert on demand) buttons.
   monitorBody.querySelectorAll(".link-btn").forEach((b) =>
-    b.addEventListener("click", () => openTrace(b.dataset.ip)));
+    b.addEventListener("click", () => openDetail(b.dataset.ip)));
+
+  renderPager();
 }
 
-// ============== TRACERT ON-DEMAND PANEL ==============
+function renderPager() {
+  const pager = $("monitorPager");
+  const totalPages = Math.max(1, Math.ceil(monitorItems.length / PAGE_SIZE));
+
+  if (monitorItems.length <= PAGE_SIZE) {
+    pager.classList.add("hidden");
+    return;
+  }
+  pager.classList.remove("hidden");
+
+  $("pagerInfo").textContent = `Página ${monitorPage + 1} de ${totalPages}`;
+  $("pagerPrev").disabled = monitorPage === 0;
+  $("pagerNext").disabled = monitorPage >= totalPages - 1;
+}
+
+function changePage(delta) {
+  const totalPages = Math.ceil(monitorItems.length / PAGE_SIZE);
+  const next = monitorPage + delta;
+  if (next < 0 || next >= totalPages) return;
+  monitorPage = next;
+  renderMonitorPage();
+}
+
+// ======= DETAIL ON-DEMAND PANEL (full ping + tracert) =======
 
 const tracePanel = $("tracePanel");
 const traceTitle = $("traceTitle");
 const traceBody = $("traceBody");
 $("traceClose").addEventListener("click", () => tracePanel.classList.add("hidden"));
 
-async function openTrace(ip) {
-  traceTitle.textContent = `Tracert — ${ip}`;
-  traceBody.innerHTML = `<p class="status">Traçando a rota (pode levar alguns segundos)...</p>`;
+async function openDetail(ip) {
+  traceTitle.textContent = `Detalhes — ${ip}`;
+  traceBody.innerHTML = `<p class="status">Executando ping e tracert (pode levar alguns segundos)...</p>`;
   tracePanel.classList.remove("hidden");
 
   try {
-    const response = await fetch("/api/monitor/trace?ip=" + encodeURIComponent(ip));
+    const response = await fetch("/api/monitor/detail?ip=" + encodeURIComponent(ip));
     if (!response.ok) {
       const err = await safeJson(response);
       throw new Error(err?.message || `Erro ${response.status}`);
     }
     const r = await response.json();
-    renderTrace(r);
+    renderDetail(r);
   } catch (e) {
     traceBody.innerHTML = `<p class="error-text">Falha: ${escapeHtml(e.message)}</p>`;
   }
 }
 
-function renderTrace(r) {
+function renderDetail(r) {
   if (r.error) {
     traceBody.innerHTML = `<p class="error-text">Erro: ${escapeHtml(r.error)}</p>`;
     return;
   }
 
+  // --- Ping section (full 4-packet ping) ---
+  const pingBadge = r.pingReachable
+    ? `<span class="badge ok">Alcançável</span>`
+    : `<span class="badge fail">Sem resposta</span>`;
+  const latency = r.averageLatencyMs != null ? `${r.averageLatencyMs.toFixed(1)} ms` : "—";
+  const pingHtml = `
+    <h4>Ping</h4>
+    <p>${pingBadge}</p>
+    <ul class="detail-stats">
+      <li>Enviados: <strong>${r.packetsSent}</strong></li>
+      <li>Recebidos: <strong>${r.packetsReceived}</strong></li>
+      <li>Perda: <strong>${r.lossPercentage.toFixed(0)}%</strong></li>
+      <li>Latência média: <strong>${latency}</strong></li>
+    </ul>`;
+
+  // --- Tracert section ---
+  let traceHtml = `<h4>Tracert</h4>`;
   if (!(r.hops || []).length) {
-    traceBody.innerHTML = `<p class="error-text">Sem saltos retornados.</p>`;
-    return;
+    traceHtml += `<p class="error-text">Sem saltos retornados.</p>`;
+  } else {
+    const reached = r.traceDestinationReached
+      ? `<p class="badge ok">Destino alcançado</p>`
+      : `<p class="badge fail">Destino não alcançado</p>`;
+    const rows = r.hops.map((h) =>
+      `<li><span class="hop-num">${h.number}</span> ${escapeHtml(h.address || "* (sem resposta)")}</li>`
+    ).join("");
+    traceHtml += `${reached}<ol class="hops trace-hops">${rows}</ol>`;
   }
 
-  const reached = r.traceDestinationReached
-    ? `<p class="badge ok">Destino alcançado</p>`
-    : `<p class="badge fail">Destino não alcançado</p>`;
-
-  const rows = r.hops.map((h) =>
-    `<li><span class="hop-num">${h.number}</span> ${escapeHtml(h.address || "* (sem resposta)")}</li>`
-  ).join("");
-
-  traceBody.innerHTML = `${reached}<ol class="hops trace-hops">${rows}</ol>`;
+  traceBody.innerHTML = pingHtml + traceHtml;
 }

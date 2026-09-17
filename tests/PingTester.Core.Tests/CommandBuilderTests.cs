@@ -31,10 +31,39 @@ public class CommandBuilderTests
     }
 
     [Test]
-    public void Ping_SpecifiesCountViaDashN()
+    public void Ping_DefaultsToFourPackets_NoTimeoutFlag()
     {
         var spec = PowerShellCommandBuilder.BuildPing(Host("8.8.8.8"));
         Assert.Equal("4", spec.Arguments["-n"]);
+        // Default ping (manual tab) does not force a shorter timeout.
+        Assert.False(spec.Arguments.ContainsKey("-w"), "default ping should not set -w");
+    }
+
+    [Test]
+    public void Ping_AcceptsCustomCount()
+    {
+        var spec = PowerShellCommandBuilder.BuildPing(Host("8.8.8.8"), count: 2);
+        Assert.Equal("2", spec.Arguments["-n"]);
+    }
+
+    [Test]
+    public void Ping_AcceptsTimeoutViaDashW()
+    {
+        // The fast monitoring ping uses a short per-packet timeout so that
+        // offline hosts give up quickly.
+        var spec = PowerShellCommandBuilder.BuildPing(Host("8.8.8.8"), count: 2, timeoutMs: 1000);
+        Assert.Equal("2", spec.Arguments["-n"]);
+        Assert.Equal("1000", spec.Arguments["-w"]);
+    }
+
+    [Test]
+    public void Ping_ClampsCountToSaneRange()
+    {
+        var tooLow = PowerShellCommandBuilder.BuildPing(Host("8.8.8.8"), count: 0);
+        Assert.Equal("1", tooLow.Arguments["-n"]);
+
+        var tooHigh = PowerShellCommandBuilder.BuildPing(Host("8.8.8.8"), count: 999);
+        Assert.Equal("10", tooHigh.Arguments["-n"]);
     }
 
     [Test]
