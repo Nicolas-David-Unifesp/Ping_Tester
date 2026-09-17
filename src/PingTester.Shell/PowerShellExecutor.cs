@@ -115,20 +115,31 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
             throw new TimeoutException($"O comando '{spec.Command}' excedeu o tempo limite.");
         }
 
-        var output = stdout.ToString();
+        var stdoutText = stdout.ToString();
+        var stderrText = stderr.ToString();
 
-        // ping/tracert report "no reply" on STDOUT (not stderr) and exit
-        // non-zero on 100% loss — that's a valid result, not an error. Only
-        // treat it as an error when there is no usable stdout at all.
-        if (string.IsNullOrWhiteSpace(output))
+        // ping/tracert exit non-zero on 100% loss / "no reply" — that is a
+        // VALID result, not an error. Their message text may land on stdout or,
+        // in some environments, on stderr. So we combine both and return
+        // whatever text exists. Only when there is NO text at all (nothing on
+        // either stream) do we surface a real execution failure.
+        var combined = stdoutText;
+        if (!string.IsNullOrWhiteSpace(stderrText))
         {
-            if (stderr.Length > 0)
-                throw new InvalidOperationException($"'{spec.Command}' falhou: {stderr.ToString().Trim()}");
-            // Empty output with no error: return empty; the parser reports it
-            // as unreachable.
+            combined = string.IsNullOrWhiteSpace(combined)
+                ? stderrText
+                : combined + stderrText;
         }
 
-        return output;
+        if (string.IsNullOrWhiteSpace(combined))
+        {
+            // Truly nothing came back — treat as an execution failure so the
+            // caller can report it.
+            throw new InvalidOperationException(
+                $"'{spec.Command}' não produziu saída.");
+        }
+
+        return combined;
     }
 
     /// <summary>

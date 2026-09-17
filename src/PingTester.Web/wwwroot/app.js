@@ -300,8 +300,17 @@ function renderDetail(detail) {
   // The detail endpoint returns { result, rawPingOutput, rawTraceOutput }.
   const r = detail.result || detail;
 
+  // Always build the raw console blocks (below), even on error/offline —
+  // that's exactly when the user wants to see what the CMD returned.
+  const rawHtml =
+    rawBlock("Saída do ping", detail.rawPingOutput) +
+    rawBlock("Saída do tracert", detail.rawTraceOutput);
+
   if (r.error) {
-    traceBody.innerHTML = `<p class="error-text">Erro: ${escapeHtml(r.error)}</p>`;
+    // Show the error, but STILL show whatever raw output we captured.
+    traceBody.innerHTML =
+      `<p class="error-text">Erro: ${escapeHtml(r.error)}</p>` + rawHtml;
+    wireCopyButtons();
     return;
   }
 
@@ -334,29 +343,37 @@ function renderDetail(detail) {
     traceHtml += `${reached}<ol class="hops trace-hops">${rows}</ol>`;
   }
 
-  // --- Verbatim console output (copy/paste) ---
-  const rawHtml =
-    rawBlock("Saída do ping", detail.rawPingOutput) +
-    rawBlock("Saída do tracert", detail.rawTraceOutput);
-
+  // --- Verbatim console output (copy/paste) --- (rawHtml built at top)
   traceBody.innerHTML = pingHtml + traceHtml + rawHtml;
+  wireCopyButtons();
+}
 
-  // Wire copy buttons (store text on the element to avoid escaping issues).
-  traceBody.querySelectorAll(".copy-btn").forEach((btn, i) => {
+function wireCopyButtons() {
+  traceBody.querySelectorAll(".copy-btn").forEach((btn) => {
     btn.addEventListener("click", () => copyText(btn));
   });
 }
 
 function rawBlock(title, text) {
-  if (!text) return "";
-  // Stash the raw text in a data attribute-safe way via <pre> content.
+  const hasText = text != null && String(text).trim().length > 0;
+
+  // When there is text, show it with a Copy button. When empty, show a small
+  // note instead of hiding the block entirely (so it's never mysteriously
+  // blank — e.g. a host that returned nothing at all).
+  const bodyHtml = hasText
+    ? `<button class="copy-btn link-btn" type="button">Copiar</button>`
+    : "";
+  const pre = hasText
+    ? `<pre class="raw-output">${escapeHtml(text)}</pre>`
+    : `<p class="status">(sem saída capturada)</p>`;
+
   return `
     <div class="raw-block">
       <div class="raw-head">
         <h4>${escapeHtml(title)}</h4>
-        <button class="copy-btn link-btn" type="button">Copiar</button>
+        ${bodyHtml}
       </div>
-      <pre class="raw-output">${escapeHtml(text)}</pre>
+      ${pre}
     </div>`;
 }
 

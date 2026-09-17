@@ -219,6 +219,50 @@ Rastreamento concluído.",
     }
 
     [Test]
+    public void Detail_OfflineHost_StillPreservesRawOutput()
+    {
+        // Regression: an offline host (100% loss) must still carry the verbatim
+        // "Esgotado o tempo limite" text so the UI can show it.
+        var orch = new NetworkTestOrchestrator(new OfflineExecutor());
+
+        var report = orch.DetailAsync(Host("10.0.0.9"), maxHops: 15).GetAwaiter().GetResult();
+
+        Assert.Null(report.Error); // 100% loss is NOT an execution error
+        Assert.NotNull(report.RawPingOutput);
+        Assert.True(report.RawPingOutput!.Contains("Esgotado"),
+            "offline ping raw text must be preserved");
+        Assert.NotNull(report.Ping);
+        Assert.False(report.Ping!.IsReachable);
+    }
+
+    /// <summary>Fake returning the classic 100%-loss (offline) output.</summary>
+    private sealed class OfflineExecutor : IPowerShellExecutor
+    {
+        public Task<string> ExecuteAsync(PowerShellCommandSpec spec, CancellationToken cancellationToken = default)
+        {
+            string text = spec.Command switch
+            {
+                "ping" =>
+@"Disparando 10.0.0.9 com 32 bytes de dados:
+Esgotado o tempo limite do pedido.
+Esgotado o tempo limite do pedido.
+
+Estatísticas do Ping para 10.0.0.9:
+    Pacotes: Enviados = 2, Recebidos = 0, Perdidos = 2 (100% de
+             perda),",
+                "tracert" =>
+@"Rastreando a rota para 10.0.0.9 com no máximo 15 saltos
+
+  1     *        *        *     Esgotado o tempo limite do pedido.
+
+Rastreamento concluído.",
+                _ => ""
+            };
+            return Task.FromResult(text);
+        }
+    }
+
+    [Test]
     public void FastPing_DoesNotCarryRawOutput()
     {
         // The fast sweep must stay lean — no verbatim text shipped per host.
