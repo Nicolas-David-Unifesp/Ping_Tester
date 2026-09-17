@@ -73,11 +73,6 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
         psi.ArgumentList.Add($"chcp 65001>nul & {innerCommand}");
 
         using var process = new Process { StartInfo = psi };
-        var stdout = new StringBuilder();
-        var stderr = new StringBuilder();
-
-        process.OutputDataReceived += (_, e) => { if (e.Data != null) stdout.AppendLine(e.Data); };
-        process.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
 
         try
         {
@@ -89,14 +84,22 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
                 $"Não foi possível executar '{spec.Command}': {ex.Message}", ex);
         }
 
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(_timeout);
 
+        // Read BOTH streams to completion, THEN wait for exit. Reading with
+        // ReadToEndAsync (instead of BeginOutputReadLine + WaitForExit) avoids a
+        // race where WaitForExit returns before the output events have been
+        // delivered — which produced an empty capture.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        string stdoutText;
+        string stderrText;
         try
         {
+            stdoutText = await stdoutTask.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+            stderrText = await stderrTask.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
             await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -104,9 +107,6 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
             TryKill(process);
             throw new TimeoutException($"O comando '{spec.Command}' excedeu o tempo limite.");
         }
-
-        var stdoutText = stdout.ToString();
-        var stderrText = stderr.ToString();
 
         // ping/tracert exit non-zero on 100% loss / "no reply" — that is a
         // VALID result, not an error. Their message text may land on stdout or,
