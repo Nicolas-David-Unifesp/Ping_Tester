@@ -51,6 +51,14 @@ domínio**.
 Pré-requisitos: **.NET SDK 8/9** e **Windows** (o app usa `ping.exe` e
 `tracert.exe`, que já vêm no Windows).
 
+Para baixar .NET SDK 8/9 pode-se usar os seguintes comandos no powershell:
+
+```powershell
+Invoke-WebRequest -Uri https://dot.net/v1/dotnet-install.ps1 -OutFile dotnet-install.ps1b
+.\dotnet-install.ps1 -Channel 9.0
+```
+Após isso, é possível rodar a aplicação:
+
 ```powershell
 dotnet run --project src/PingTester.Web
 ```
