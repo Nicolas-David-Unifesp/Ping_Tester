@@ -111,6 +111,11 @@ painel "Ver detalhes"; ficam em branco (—) quando não preenchidos. Arquivos
 antigos só com IPs (sem cabeçalho) continuam funcionando, com os rótulos em
 branco.
 
+A aba tem um **campo de busca único** que filtra a tabela em tempo real
+conforme você digita, comparando com **IP, escola e dispositivo** ao mesmo
+tempo (sem diferenciar maiúsculas/acentos). A paginação passa a operar sobre o
+resultado filtrado; o botão **Limpar** remove o filtro.
+
 > O botão **Atualizar** ignora o cache e refaz a verredura na hora.
 
 Resposta:

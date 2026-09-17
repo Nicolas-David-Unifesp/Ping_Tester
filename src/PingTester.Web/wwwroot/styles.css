@@ -256,3 +256,25 @@ footer { text-align: center; color: var(--muted); padding: 2rem 1rem; }
   overflow-y: auto;
 }
 .copy-btn { padding: 0.2rem 0.6rem; font-size: 0.78rem; }
+
+
+/* ================== Monitor search ================== */
+.monitor-search {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.5rem 0 1rem;
+}
+.monitor-search input[type="search"] {
+  flex: 1;
+  background: #0b1220;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.95rem;
+}
+.monitor-search input[type="search"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}

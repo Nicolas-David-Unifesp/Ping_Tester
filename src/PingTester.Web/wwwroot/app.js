@@ -163,14 +163,51 @@ function switchTab(name) {
 const monitorRefreshBtn = $("monitorRefresh");
 const monitorSummary = $("monitorSummary");
 const monitorBody = $("monitorBody");
+const monitorSearchInput = $("monitorSearch");
+const monitorSearchClear = $("monitorSearchClear");
 
 const PAGE_SIZE = 15;
 let monitorItems = [];   // full list from the server
-let monitorPage = 0;     // current page index (0-based)
+let monitorPage = 0;     // current page index (0-based) into the FILTERED list
+let monitorSearch = "";  // current search term (normalized)
 
 monitorRefreshBtn.addEventListener("click", () => loadMonitor(true));
 $("pagerPrev").addEventListener("click", () => changePage(-1));
 $("pagerNext").addEventListener("click", () => changePage(1));
+
+// Live search: filter as the user types (single field, matches IP + escola +
+// dispositivo). Pagination then operates on the filtered result.
+monitorSearchInput.addEventListener("input", () => {
+  monitorSearch = normalizeSearch(monitorSearchInput.value);
+  monitorPage = 0;
+  renderMonitorPage();
+});
+monitorSearchClear.addEventListener("click", () => {
+  monitorSearchInput.value = "";
+  monitorSearch = "";
+  monitorPage = 0;
+  renderMonitorPage();
+});
+
+// Lower-cases and strips accents so search is case/accent-insensitive.
+function normalizeSearch(value) {
+  return (value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+// The list after applying the current search term.
+function getFilteredItems() {
+  if (!monitorSearch) return monitorItems;
+  return monitorItems.filter((item) => {
+    const haystack = normalizeSearch(
+      `${item.target} ${item.escola || ""} ${item.dispositivo || ""}`
+    );
+    return haystack.includes(monitorSearch);
+  });
+}
 
 async function loadMonitor(forceRefresh) {
   monitorRefreshBtn.disabled = true;
@@ -194,6 +231,8 @@ function renderMonitor(data) {
   monitorBody.innerHTML = "";
   monitorItems = data.items || [];
   monitorPage = 0;
+  // Keep whatever the user already typed in the search box.
+  monitorSearch = normalizeSearch(monitorSearchInput.value);
 
   if (!data.sourceExists) {
     monitorSummary.textContent =
@@ -219,8 +258,21 @@ function renderMonitor(data) {
 function renderMonitorPage() {
   monitorBody.innerHTML = "";
 
+  const items = getFilteredItems();
+
+  // Clamp the current page in case the filter shrank the list.
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  if (monitorPage > totalPages - 1) monitorPage = totalPages - 1;
+
   const start = monitorPage * PAGE_SIZE;
-  const pageItems = monitorItems.slice(start, start + PAGE_SIZE);
+  const pageItems = items.slice(start, start + PAGE_SIZE);
+
+  if (items.length === 0 && monitorSearch) {
+    monitorBody.innerHTML =
+      `<tr><td colspan="7" class="status">Nenhum resultado para "${escapeHtml(monitorSearchInput.value)}".</td></tr>`;
+    renderPager();
+    return;
+  }
 
   for (const item of pageItems) {
     const tr = document.createElement("tr");
@@ -252,9 +304,10 @@ function renderMonitorPage() {
 
 function renderPager() {
   const pager = $("monitorPager");
-  const totalPages = Math.max(1, Math.ceil(monitorItems.length / PAGE_SIZE));
+  const count = getFilteredItems().length;
+  const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
 
-  if (monitorItems.length <= PAGE_SIZE) {
+  if (count <= PAGE_SIZE) {
     pager.classList.add("hidden");
     return;
   }
@@ -266,7 +319,7 @@ function renderPager() {
 }
 
 function changePage(delta) {
-  const totalPages = Math.ceil(monitorItems.length / PAGE_SIZE);
+  const totalPages = Math.ceil(getFilteredItems().length / PAGE_SIZE);
   const next = monitorPage + delta;
   if (next < 0 || next >= totalPages) return;
   monitorPage = next;
