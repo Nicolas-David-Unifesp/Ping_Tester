@@ -31,9 +31,11 @@ public static class ResultMapper
     /// Detail mapping for the monitoring tab: includes the verbatim console
     /// output alongside the parsed result.
     /// </summary>
-    public static MonitorDetailDto ToDetailDto(HostTestReport report) =>
+    public static MonitorDetailDto ToDetailDto(HostTestReport report, string escola, string dispositivo) =>
         new(
             Result: ToDto(report),
+            Escola: escola,
+            Dispositivo: dispositivo,
             RawPingOutput: report.RawPingOutput,
             RawTraceOutput: report.RawTraceOutput);
 

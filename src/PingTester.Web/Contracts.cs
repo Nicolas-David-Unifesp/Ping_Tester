@@ -33,6 +33,8 @@ public sealed record InvalidInputDto(string Value, string Reason);
 /// <summary>Status of one monitored host (ping-only, fast path).</summary>
 public sealed record MonitorItemDto(
     string Target,
+    string Escola,
+    string Dispositivo,
     bool Online,
     double? AverageLatencyMs,
     double LossPercentage,
@@ -55,5 +57,7 @@ public sealed record MonitorResponse(
 /// </summary>
 public sealed record MonitorDetailDto(
     HostResultDto Result,
+    string Escola,
+    string Dispositivo,
     string? RawPingOutput,
     string? RawTraceOutput);

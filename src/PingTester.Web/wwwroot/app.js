@@ -235,6 +235,8 @@ function renderMonitorPage() {
     tr.innerHTML = `
       <td>${statusBadge}</td>
       <td>${escapeHtml(item.target)}</td>
+      <td>${escapeHtml(item.escola || "—")}</td>
+      <td>${escapeHtml(item.dispositivo || "—")}</td>
       <td>${latency}</td>
       <td>${loss}</td>
       <td><button class="link-btn" data-ip="${escapeHtml(item.target)}" type="button">Ver detalhes</button></td>`;
@@ -306,10 +308,16 @@ function renderDetail(detail) {
     rawBlock("Saída do ping", detail.rawPingOutput) +
     rawBlock("Saída do tracert", detail.rawTraceOutput);
 
+  const labelsTop = `
+    <ul class="detail-stats">
+      <li>Escola: <strong>${escapeHtml(detail.escola || "—")}</strong></li>
+      <li>Dispositivo: <strong>${escapeHtml(detail.dispositivo || "—")}</strong></li>
+    </ul>`;
+
   if (r.error) {
-    // Show the error, but STILL show whatever raw output we captured.
+    // Show the labels + error, but STILL show whatever raw output we captured.
     traceBody.innerHTML =
-      `<p class="error-text">Erro: ${escapeHtml(r.error)}</p>` + rawHtml;
+      labelsTop + `<p class="error-text">Erro: ${escapeHtml(r.error)}</p>` + rawHtml;
     wireCopyButtons();
     return;
   }
@@ -344,7 +352,7 @@ function renderDetail(detail) {
   }
 
   // --- Verbatim console output (copy/paste) --- (rawHtml built at top)
-  traceBody.innerHTML = pingHtml + traceHtml + rawHtml;
+  traceBody.innerHTML = labelsTop + pingHtml + traceHtml + rawHtml;
   wireCopyButtons();
 }
 

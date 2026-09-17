@@ -29,15 +29,14 @@ public sealed class MonitoredHostsRepository
     /// <summary>True if the configured CSV file exists.</summary>
     public bool Exists => File.Exists(_csvPath);
 
-    public async Task<IReadOnlyList<HostAddress>> LoadAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MonitoredHost>> LoadAsync(CancellationToken cancellationToken = default)
     {
         if (!File.Exists(_csvPath))
-            return System.Array.Empty<HostAddress>();
+            return System.Array.Empty<MonitoredHost>();
 
         var text = await File.ReadAllTextAsync(_csvPath, cancellationToken).ConfigureAwait(false);
 
-        // Pure core extracts and validates the IPs from the raw CSV text.
-        var parsed = CsvIpExtractor.Extract(text);
-        return parsed.ValidHosts;
+        // Pure core parses the structured CSV (ip + escola + dispositivo).
+        return MonitoredHostCsvParser.Parse(text);
     }
 }

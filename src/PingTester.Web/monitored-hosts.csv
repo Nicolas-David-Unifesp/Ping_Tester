@@ -1,4 +1,5 @@
-ip;descricao
-127.0.0.1;Loopback local
-8.8.8.8;Google DNS
-1.1.1.1;Cloudflare DNS
+ip;escola;dispositivo
+127.0.0.1;Sede/Servidor local;Loopback
+10.113.96.148;EMEF Exemplo A;Roteador principal
+192.168.0.10;EMEF Exemplo A;Switch sala 3
+1.1.1.1;EEEP Exemplo B;Access Point pátio

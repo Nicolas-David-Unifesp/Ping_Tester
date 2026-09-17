@@ -94,14 +94,22 @@ Configuração (todas opcionais, via `appsettings.json` ou variáveis de ambient
 | `Monitor:Parallelism` | `40` | Pings simultâneos. |
 | `Monitor:TraceHops` | `15` | Máximo de saltos do tracert no detalhe. |
 
-Formato do `monitored-hosts.csv` (mesmas regras do upload de CSV — IP em
-qualquer coluna, cabeçalho e células não-IP ignorados, `;` ou `,`):
+Formato do `monitored-hosts.csv` — colunas nomeadas por um **cabeçalho**
+(`ip`, `escola`, `dispositivo`); a ordem não importa e os nomes são
+reconhecidos sem diferenciar maiúsculas/acentos. `dispositivo` também aceita
+`equipamento`/`device`. Delimitador `;` ou `,`.
 
 ```
-ip;descricao
-127.0.0.1;Loopback local
-10.113.96.148;Servidor A
+ip;escola;dispositivo
+10.113.96.148;EMEF Exemplo A;Roteador principal
+192.168.0.10;EMEF Exemplo A;Switch sala 3
+1.1.1.1;EEEP Exemplo B;Access Point pátio
 ```
+
+`escola` e `dispositivo` aparecem como colunas na tabela de monitoramento e no
+painel "Ver detalhes"; ficam em branco (—) quando não preenchidos. Arquivos
+antigos só com IPs (sem cabeçalho) continuam funcionando, com os rótulos em
+branco.
 
 > O botão **Atualizar** ignora o cache e refaz a verredura na hora.
 
