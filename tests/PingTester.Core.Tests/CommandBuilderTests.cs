@@ -1,14 +1,15 @@
+using System.Linq;
 using PingTester.Core.Ips;
 using PingTester.Core.Commands;
 
 namespace PingTester.Core.Tests;
 
 /// <summary>
-/// TDD (RED first): the pure core decides WHAT PowerShell command to run
-/// (as data) but never executes it. The shell executes the produced spec.
-/// This keeps command construction testable and, crucially, safe: only a
-/// validated HostAddress can reach the builder, and the value is passed as a
-/// parameter argument rather than concatenated into a script string.
+/// TDD: the pure core decides WHAT command to run (as data) but never executes
+/// it. We use the classic executables ping.exe / tracert.exe (the cmdlets fail
+/// via WMI on Windows PowerShell 5.1 in the target environment). Only a
+/// validated HostAddress can reach the builder, and the IP is carried as the
+/// discrete positional Target (never interpolated into a script).
 /// </summary>
 public class CommandBuilderTests
 {
@@ -16,54 +17,52 @@ public class CommandBuilderTests
         HostAddress.TryCreate(ip) ?? throw new System.Exception($"test setup: {ip} invalid");
 
     [Test]
-    public void Ping_UsesTestConnectionCmdlet()
+    public void Ping_UsesPingExecutable()
     {
         var spec = PowerShellCommandBuilder.BuildPing(Host("8.8.8.8"));
-
-        Assert.Equal("Test-Connection", spec.Command);
+        Assert.Equal("ping", spec.Command);
     }
 
     [Test]
-    public void Ping_PassesTargetAsArgument_NotConcatenated()
+    public void Ping_CarriesTargetAsPositional()
     {
         var spec = PowerShellCommandBuilder.BuildPing(Host("8.8.8.8"));
-
-        // The IP must appear as a discrete argument value so the shell can pass
-        // it via parameter binding (no string interpolation into a script).
-        Assert.Equal("8.8.8.8", spec.Arguments["-TargetName"]);
+        Assert.Equal("8.8.8.8", spec.Target);
     }
 
     [Test]
-    public void Ping_SpecifiesCount()
+    public void Ping_SpecifiesCountViaDashN()
     {
         var spec = PowerShellCommandBuilder.BuildPing(Host("8.8.8.8"));
-
-        Assert.Equal("4", spec.Arguments["-Count"]);
+        Assert.Equal("4", spec.Arguments["-n"]);
     }
 
     [Test]
-    public void Tracert_UsesTestNetConnectionCmdlet()
+    public void Tracert_UsesTracertExecutable()
     {
         var spec = PowerShellCommandBuilder.BuildTracert(Host("1.1.1.1"));
-
-        Assert.Equal("Test-NetConnection", spec.Command);
+        Assert.Equal("tracert", spec.Command);
     }
 
     [Test]
-    public void Tracert_RequestsTraceRoute()
+    public void Tracert_LimitsHopsTo15()
     {
         var spec = PowerShellCommandBuilder.BuildTracert(Host("1.1.1.1"));
-
-        Assert.True(spec.Switches.Contains("-TraceRoute"),
-            "tracert spec must include the -TraceRoute switch");
+        Assert.Equal("15", spec.Arguments["-h"]);
     }
 
     [Test]
-    public void Tracert_PassesTargetAsArgument()
+    public void Tracert_UsesNumericFlag_SkipsDns()
     {
         var spec = PowerShellCommandBuilder.BuildTracert(Host("1.1.1.1"));
+        Assert.True(spec.Switches.Contains("-d"), "tracert should use -d to skip reverse DNS");
+    }
 
-        Assert.Equal("1.1.1.1", spec.Arguments["-ComputerName"]);
+    [Test]
+    public void Tracert_CarriesTargetAsPositional()
+    {
+        var spec = PowerShellCommandBuilder.BuildTracert(Host("1.1.1.1"));
+        Assert.Equal("1.1.1.1", spec.Target);
     }
 
     [Test]
@@ -71,10 +70,11 @@ public class CommandBuilderTests
     {
         var spec = PowerShellCommandBuilder.BuildPing(Host("8.8.8.8"));
 
-        // A readable representation is handy for logs / the UI. It is NOT what
-        // gets executed (the shell binds parameters), but must reflect the spec.
+        // Illustrative only (the shell passes discrete args). Should read like:
+        // "ping -n 4 8.8.8.8"
         var text = spec.ToDisplayString();
-        Assert.True(text.Contains("Test-Connection"), "should name the cmdlet");
+        Assert.True(text.Contains("ping"), "should name the executable");
         Assert.True(text.Contains("8.8.8.8"), "should show the target");
+        Assert.True(text.Contains("-n"), "should show the count flag");
     }
 }

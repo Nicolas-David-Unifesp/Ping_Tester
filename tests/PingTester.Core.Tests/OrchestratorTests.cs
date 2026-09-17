@@ -24,16 +24,28 @@ public class OrchestratorTests
         {
             Executed.Add(spec.Command);
 
-            string json = spec.Command switch
+            // The fake now returns the classic ping.exe / tracert.exe TEXT
+            // output (Portuguese), matching what the real executor captures.
+            string text = spec.Command switch
             {
-                "Test-Connection" =>
-                    @"[{""Status"":""Success"",""Latency"":10,""Address"":""8.8.8.8""},
-                       {""Status"":""Success"",""Latency"":20,""Address"":""8.8.8.8""}]",
-                "Test-NetConnection" =>
-                    @"{""ComputerName"":""8.8.8.8"",""PingSucceeded"":true,""TraceRoute"":[""192.168.0.1"",""8.8.8.8""]}",
-                _ => "{}"
+                "ping" =>
+@"Disparando 8.8.8.8 com 32 bytes de dados:
+Resposta de 8.8.8.8: bytes=32 tempo=10ms TTL=58
+Resposta de 8.8.8.8: bytes=32 tempo=20ms TTL=58
+
+Estatísticas do Ping para 8.8.8.8:
+    Pacotes: Enviados = 2, Recebidos = 2, Perdidos = 0 (0% de
+             perda),",
+                "tracert" =>
+@"Rastreando a rota para 8.8.8.8 com no máximo 15 saltos
+
+  1     1 ms     1 ms     1 ms  192.168.0.1
+  2    10 ms    20 ms    15 ms  8.8.8.8
+
+Rastreamento concluído.",
+                _ => ""
             };
-            return Task.FromResult(json);
+            return Task.FromResult(text);
         }
     }
 
@@ -48,8 +60,8 @@ public class OrchestratorTests
 
         var reports = orch.RunAsync(new[] { Host("8.8.8.8") }).GetAwaiter().GetResult();
 
-        Assert.Contains("Test-Connection", fake.Executed);
-        Assert.Contains("Test-NetConnection", fake.Executed);
+        Assert.Contains("ping", fake.Executed);
+        Assert.Contains("tracert", fake.Executed);
         Assert.Count(1, reports);
     }
 

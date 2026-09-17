@@ -1,40 +1,51 @@
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 
 namespace PingTester.Core.Commands;
 
 /// <summary>
-/// A description (as pure data) of a PowerShell cmdlet invocation. Produced by
-/// the functional core; executed by the imperative shell. The shell is expected
-/// to bind <see cref="Arguments"/> as named parameters (NOT string
+/// A description (as pure data) of a command invocation. Produced by the
+/// functional core; executed by the imperative shell.
+///
+/// For the classic executables we use (ping / tracert), <see cref="Arguments"/>
+/// are named options (e.g. "-n" => "4"), <see cref="Switches"/> are valueless
+/// flags (e.g. "-d"), and <see cref="Target"/> is the positional host argument
+/// placed at the END of the command line (e.g. `ping -n 4 8.8.8.8`).
+///
+/// The shell passes each piece as a discrete process argument (never string
 /// interpolation), which keeps execution safe from injection.
 /// Immutable.
 /// </summary>
 public sealed class PowerShellCommandSpec
 {
-    /// <summary>The cmdlet name, e.g. "Test-Connection".</summary>
+    /// <summary>The executable name, e.g. "ping" or "tracert".</summary>
     public string Command { get; }
 
-    /// <summary>Named parameters with values, e.g. "-TargetName" => "8.8.8.8".</summary>
+    /// <summary>Named options with values, e.g. "-n" => "4".</summary>
     public IReadOnlyDictionary<string, string> Arguments { get; }
 
-    /// <summary>Valueless switch parameters, e.g. "-TraceRoute".</summary>
+    /// <summary>Valueless switch flags, e.g. "-d".</summary>
     public IReadOnlyList<string> Switches { get; }
+
+    /// <summary>
+    /// The positional target (host/IP), rendered last. Empty when not used.
+    /// </summary>
+    public string Target { get; }
 
     public PowerShellCommandSpec(
         string command,
         IReadOnlyDictionary<string, string> arguments,
-        IReadOnlyList<string> switches)
+        IReadOnlyList<string> switches,
+        string target = "")
     {
         Command = command;
         Arguments = arguments;
         Switches = switches;
+        Target = target;
     }
 
     /// <summary>
     /// Human-readable rendering for logs and UI. This is illustrative only —
-    /// the shell binds parameters directly and does not run this string.
+    /// the shell passes discrete process arguments and does not run this string.
     /// </summary>
     public string ToDisplayString()
     {
@@ -43,6 +54,8 @@ public sealed class PowerShellCommandSpec
             sb.Append(' ').Append(kv.Key).Append(' ').Append(kv.Value);
         foreach (var sw in Switches)
             sb.Append(' ').Append(sw);
+        if (Target.Length > 0)
+            sb.Append(' ').Append(Target);
         return sb.ToString();
     }
 }

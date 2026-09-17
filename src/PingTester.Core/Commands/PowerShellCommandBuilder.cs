@@ -14,34 +14,48 @@ public static class PowerShellCommandBuilder
     /// <summary>Number of echo requests sent by a ping.</summary>
     public const int PingCount = 4;
 
+    /// <summary>Maximum number of hops for the traceroute.</summary>
+    public const int MaxHops = 15;
+
+    /// <summary>
+    /// Builds: ping -n 4 &lt;ip&gt;
+    /// Uses the classic ping.exe (works via ICMP, same as the CMD prompt) —
+    /// the Windows PowerShell 5.1 Test-Connection cmdlet fails via WMI on the
+    /// target environment.
+    /// </summary>
     public static PowerShellCommandSpec BuildPing(HostAddress host)
     {
         ArgumentNullException.ThrowIfNull(host);
 
         var args = new Dictionary<string, string>
         {
-            ["-TargetName"] = host.Value,
-            ["-Count"] = PingCount.ToString(),
+            ["-n"] = PingCount.ToString(),
         };
 
         return new PowerShellCommandSpec(
-            command: "Test-Connection",
+            command: "ping",
             arguments: args,
-            switches: Array.Empty<string>());
+            switches: Array.Empty<string>(),
+            target: host.Value);
     }
 
+    /// <summary>
+    /// Builds: tracert -d -h 15 &lt;ip&gt;
+    /// -d skips reverse-DNS (faster); -h 15 caps the hop count.
+    /// </summary>
     public static PowerShellCommandSpec BuildTracert(HostAddress host)
     {
         ArgumentNullException.ThrowIfNull(host);
 
         var args = new Dictionary<string, string>
         {
-            ["-ComputerName"] = host.Value,
+            ["-h"] = MaxHops.ToString(),
         };
 
         return new PowerShellCommandSpec(
-            command: "Test-NetConnection",
+            command: "tracert",
             arguments: args,
-            switches: new[] { "-TraceRoute" });
+            switches: new[] { "-d" },
+            target: host.Value);
     }
 }

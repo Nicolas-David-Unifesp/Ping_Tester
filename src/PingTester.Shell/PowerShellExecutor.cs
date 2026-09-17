@@ -9,54 +9,78 @@ using PingTester.Core.Commands;
 namespace PingTester.Shell;
 
 /// <summary>
-/// IMPERATIVE SHELL — impure. Real implementation that launches PowerShell and
-/// runs the cmdlet described by the spec, piping the result through
-/// ConvertTo-Json so the pure core can parse a stable format.
+/// IMPERATIVE SHELL — impure. Runs the classic Windows network executables
+/// (ping.exe / tracert.exe) described by the spec and captures their TEXT
+/// output. These use ICMP directly — the same mechanism as the CMD prompt —
+/// which works on the target environment where the Windows PowerShell 5.1
+/// Test-Connection cmdlet fails via WMI.
 ///
-/// SECURITY: the command name is a fixed cmdlet chosen by our own core, and the
-/// argument VALUES are passed via a parameters hashtable using PowerShell
-/// splatting (@params). Values are therefore bound as data, never interpreted
-/// as script — so a value can't inject commands. As defence in depth we also
-/// reject any argument value that isn't a plain IP-ish token.
+/// SECURITY: the executable is a fixed name chosen by our own core; every
+/// option, switch and the target IP are passed as DISCRETE process arguments
+/// (ProcessStartInfo.ArgumentList), never concatenated into a shell string, so
+/// a value cannot inject a command. As defence in depth we also reject any
+/// argument/target value that isn't a plain IP-ish token.
 ///
-/// NOTE: This runs PowerShell and real network probes, so it only works on a
-/// machine with PowerShell installed (your Windows server). It is intentionally
-/// NOT exercised by the offline unit tests.
+/// ENCODING: ping/tracert write to the console using the OEM code page (e.g.
+/// 850 in Brazilian Windows). We decode stdout with that code page so accented
+/// text ("Estatísticas", "máximo", "concluído") is read correctly.
+///
+/// NOTE: runs real processes + network probes, so it only works on Windows. It
+/// is intentionally NOT exercised by the offline unit tests (which use a fake).
 /// </summary>
 public sealed class PowerShellExecutor : IPowerShellExecutor
 {
-    private readonly string _executable;
     private readonly TimeSpan _timeout;
+    private readonly Encoding _outputEncoding;
 
     /// <param name="executable">
-    /// "powershell" (Windows PowerShell) or "pwsh" (PowerShell 7+).
+    /// Kept for backwards compatibility with existing DI wiring; ignored now
+    /// that we invoke ping/tracert directly rather than through a shell.
     /// </param>
+    /// <param name="timeout">Per-command timeout (tracert can be slow).</param>
     public PowerShellExecutor(string executable = "powershell", TimeSpan? timeout = null)
     {
-        _executable = executable;
         _timeout = timeout ?? TimeSpan.FromSeconds(120);
+        _outputEncoding = ResolveOemEncoding();
     }
 
     public async Task<string> ExecuteAsync(PowerShellCommandSpec spec, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(spec);
 
-        var script = BuildScript(spec);
-
         var psi = new ProcessStartInfo
         {
-            FileName = _executable,
+            FileName = spec.Command, // "ping" or "tracert" — resolved from PATH
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
+            StandardOutputEncoding = _outputEncoding,
+            StandardErrorEncoding = _outputEncoding,
         };
-        // -NoProfile for speed/determinism, -NonInteractive so it never blocks,
-        // -Command runs our generated script.
-        psi.ArgumentList.Add("-NoProfile");
-        psi.ArgumentList.Add("-NonInteractive");
-        psi.ArgumentList.Add("-Command");
-        psi.ArgumentList.Add(script);
+
+        // Named options: e.g. "-n" "4".
+        foreach (var kv in spec.Arguments)
+        {
+            ValidateToken(kv.Key);
+            ValidateToken(kv.Value);
+            psi.ArgumentList.Add(kv.Key);
+            psi.ArgumentList.Add(kv.Value);
+        }
+
+        // Valueless switches: e.g. "-d".
+        foreach (var sw in spec.Switches)
+        {
+            ValidateToken(sw);
+            psi.ArgumentList.Add(sw);
+        }
+
+        // Positional target (the IP) goes LAST: e.g. "ping -n 4 8.8.8.8".
+        if (spec.Target.Length > 0)
+        {
+            ValidateToken(spec.Target);
+            psi.ArgumentList.Add(spec.Target);
+        }
 
         using var process = new Process { StartInfo = psi };
         var stdout = new StringBuilder();
@@ -65,7 +89,16 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
         process.OutputDataReceived += (_, e) => { if (e.Data != null) stdout.AppendLine(e.Data); };
         process.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
 
-        process.Start();
+        try
+        {
+            process.Start();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Não foi possível executar '{spec.Command}': {ex.Message}", ex);
+        }
+
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
@@ -79,70 +112,55 @@ public sealed class PowerShellExecutor : IPowerShellExecutor
         catch (OperationCanceledException)
         {
             TryKill(process);
-            throw new TimeoutException($"O comando PowerShell '{spec.Command}' excedeu o tempo limite.");
+            throw new TimeoutException($"O comando '{spec.Command}' excedeu o tempo limite.");
         }
 
-        var output = stdout.ToString().Trim();
-        if (string.IsNullOrEmpty(output) && stderr.Length > 0)
-            throw new InvalidOperationException($"PowerShell falhou: {stderr}");
+        var output = stdout.ToString();
+
+        // ping/tracert report "no reply" on STDOUT (not stderr) and exit
+        // non-zero on 100% loss — that's a valid result, not an error. Only
+        // treat it as an error when there is no usable stdout at all.
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            if (stderr.Length > 0)
+                throw new InvalidOperationException($"'{spec.Command}' falhou: {stderr.ToString().Trim()}");
+            // Empty output with no error: return empty; the parser reports it
+            // as unreachable.
+        }
 
         return output;
     }
 
     /// <summary>
-    /// Builds a script that splats a parameters hashtable into the cmdlet and
-    /// converts the result to JSON. Argument values are placed in the hashtable
-    /// as string literals (single-quoted, with any single quotes doubled), so
-    /// they are data, not code.
+    /// Resolves the console OEM encoding used by ping/tracert. On Windows the
+    /// process console encoding already reflects the OEM code page (e.g. 850 in
+    /// Brazilian Windows), so <see cref="Console.OutputEncoding"/> is correct.
+    /// Falls back to UTF-8 elsewhere.
     /// </summary>
-    private static string BuildScript(PowerShellCommandSpec spec)
+    private static Encoding ResolveOemEncoding()
     {
-        var sb = new StringBuilder();
-        sb.Append("$ErrorActionPreference='SilentlyContinue'; ");
-        sb.Append("$p=@{");
-
-        var first = true;
-        foreach (var kv in spec.Arguments)
+        try
         {
-            var name = StripLeadingDash(kv.Key);
-            ValidateArgumentValue(kv.Value);
-            if (!first) sb.Append("; ");
-            sb.Append(name).Append("='").Append(EscapeSingleQuotes(kv.Value)).Append('\'');
-            first = false;
+            return Console.OutputEncoding;
         }
-        sb.Append("}; ");
-
-        // Switches are appended directly (they carry no user data).
-        var switches = new StringBuilder();
-        foreach (var sw in spec.Switches)
-            switches.Append(' ').Append(sw);
-
-        // -WarningAction/-Depth keep JSON clean and complete.
-        sb.Append(spec.Command)
-          .Append(" @p")
-          .Append(switches)
-          .Append(" -WarningAction SilentlyContinue | ConvertTo-Json -Depth 4 -Compress");
-
-        return sb.ToString();
+        catch
+        {
+            return Encoding.UTF8;
+        }
     }
 
-    private static string StripLeadingDash(string name) =>
-        name.StartsWith('-') ? name[1..] : name;
-
-    private static string EscapeSingleQuotes(string value) =>
-        value.Replace("'", "''");
-
     /// <summary>
-    /// Defence in depth: even though values are bound as data, reject anything
-    /// that isn't a plausible host token (IPv4/IPv6/hostname chars) or number.
+    /// Defence in depth: allow only plain host/option tokens (alphanumerics and
+    /// . : - _ /). Reject anything that could be abused, even though arguments
+    /// are already passed as discrete process args.
     /// </summary>
-    private static void ValidateArgumentValue(string value)
+    private static void ValidateToken(string value)
     {
         foreach (var c in value)
         {
-            bool ok = char.IsLetterOrDigit(c) || c == '.' || c == ':' || c == '-' || c == '_';
+            bool ok = char.IsLetterOrDigit(c) || c == '.' || c == ':' || c == '-' || c == '_' || c == '/';
             if (!ok)
-                throw new ArgumentException($"Valor de argumento inválido para PowerShell: '{value}'");
+                throw new ArgumentException($"Valor de argumento inválido: '{value}'");
         }
     }
 

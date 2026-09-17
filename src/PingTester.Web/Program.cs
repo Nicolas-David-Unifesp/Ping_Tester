@@ -10,10 +10,13 @@ using PingTester.Web;
 var builder = WebApplication.CreateBuilder(args);
 
 // --- Dependency injection: wire the imperative shell -----------------------
-// The PowerShell executable can be overridden via config ("PowerShell:Exe"),
-// e.g. "pwsh" for PowerShell 7. Defaults to Windows PowerShell.
-var psExe = builder.Configuration["PowerShell:Exe"] ?? "powershell";
-builder.Services.AddSingleton<IPowerShellExecutor>(_ => new PowerShellExecutor(psExe));
+// The executor runs the classic ping.exe / tracert.exe directly (same ICMP
+// mechanism as the CMD prompt), which works where the Windows PowerShell 5.1
+// Test-Connection cmdlet fails via WMI. An optional per-command timeout can be
+// set via config "Ping:TimeoutSeconds".
+var timeoutSeconds = builder.Configuration.GetValue<int?>("Ping:TimeoutSeconds") ?? 120;
+builder.Services.AddSingleton<IPowerShellExecutor>(_ =>
+    new PowerShellExecutor(timeout: TimeSpan.FromSeconds(timeoutSeconds)));
 builder.Services.AddSingleton(sp =>
     new NetworkTestOrchestrator(sp.GetRequiredService<IPowerShellExecutor>(), maxParallelism: 4));
 

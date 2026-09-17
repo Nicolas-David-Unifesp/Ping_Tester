@@ -4,157 +4,235 @@ using PingTester.Core.Results;
 namespace PingTester.Core.Tests;
 
 /// <summary>
-/// TDD (RED first): parse the JSON that the shell captures from the cmdlets
-/// (via ConvertTo-Json) into domain results. Pure functions — no process, no
-/// network. Parsing JSON rather than localized human text keeps this stable
-/// across PowerShell locales/versions.
+/// TDD (RED first): parse the TEXT output of the classic Windows ping.exe /
+/// tracert.exe (Portuguese locale). Pure functions — no process, no network.
+/// The samples below are the real output captured on the target machine.
 /// </summary>
 public class PingOutputParserTests
 {
-    // Shape produced by: Test-Connection -TargetName 8.8.8.8 -Count 4 | ConvertTo-Json
-    // (fields relevant to us: Status, Latency/Ping replies). Simplified sample.
-    private const string SuccessJson = @"[
-        { ""Status"": ""Success"", ""Latency"": 10, ""Address"": ""8.8.8.8"" },
-        { ""Status"": ""Success"", ""Latency"": 12, ""Address"": ""8.8.8.8"" },
-        { ""Status"": ""Success"", ""Latency"": 11, ""Address"": ""8.8.8.8"" },
-        { ""Status"": ""Success"", ""Latency"": 9,  ""Address"": ""8.8.8.8"" }
-    ]";
+    // Real output of: ping -n 4 127.0.0.1  (all successful, sub-millisecond)
+    private const string SuccessLoopback =
+@"Disparando 127.0.0.1 com 32 bytes de dados:
+Resposta de 127.0.0.1: bytes=32 tempo<1ms TTL=128
+Resposta de 127.0.0.1: bytes=32 tempo<1ms TTL=128
+Resposta de 127.0.0.1: bytes=32 tempo<1ms TTL=128
+Resposta de 127.0.0.1: bytes=32 tempo<1ms TTL=128
 
-    private const string PartialLossJson = @"[
-        { ""Status"": ""Success"",         ""Latency"": 10, ""Address"": ""8.8.8.8"" },
-        { ""Status"": ""TimedOut"",        ""Latency"": 0,  ""Address"": ""8.8.8.8"" },
-        { ""Status"": ""Success"",         ""Latency"": 20, ""Address"": ""8.8.8.8"" },
-        { ""Status"": ""DestinationHostUnreachable"", ""Latency"": 0, ""Address"": ""8.8.8.8"" }
-    ]";
+Estatísticas do Ping para 127.0.0.1:
+    Pacotes: Enviados = 4, Recebidos = 4, Perdidos = 0 (0% de
+             perda),
+Aproximar um número redondo de vezes em milissegundos:
+    Mínimo = 0ms, Máximo = 0ms, Média = 0ms";
+
+    // Real output of: ping -n 4 10.113.96.148  (all successful, tempo=Xms)
+    private const string SuccessRemote =
+@"Disparando 10.113.96.148 com 32 bytes de dados:
+Resposta de 10.113.96.148: bytes=32 tempo=9ms TTL=58
+Resposta de 10.113.96.148: bytes=32 tempo=11ms TTL=58
+Resposta de 10.113.96.148: bytes=32 tempo=9ms TTL=58
+Resposta de 10.113.96.148: bytes=32 tempo=12ms TTL=58
+
+Estatísticas do Ping para 10.113.96.148:
+    Pacotes: Enviados = 4, Recebidos = 4, Perdidos = 0 (0% de
+             perda),
+Aproximar um número redondo de vezes em milissegundos:
+    Mínimo = 9ms, Máximo = 12ms, Média = 10ms";
+
+    // Real output of: ping 8.8.8.8  (100% loss / timeouts)
+    private const string AllTimeout =
+@"Disparando 8.8.8.8 com 32 bytes de dados:
+Esgotado o tempo limite do pedido.
+Esgotado o tempo limite do pedido.
+Esgotado o tempo limite do pedido.
+Esgotado o tempo limite do pedido.
+
+Estatísticas do Ping para 8.8.8.8:
+    Pacotes: Enviados = 4, Recebidos = 0, Perdidos = 4 (100% de
+             perda),";
 
     [Test]
-    public void AllSuccess_ReportsSuccessAndZeroLoss()
+    public void SuccessRemote_CountsSentAndReceived()
     {
-        var result = PingOutputParser.Parse("8.8.8.8", SuccessJson);
+        var result = PingOutputParser.Parse("10.113.96.148", SuccessRemote);
 
-        Assert.True(result.IsReachable, "all replies succeeded");
         Assert.Equal(4, result.PacketsSent);
         Assert.Equal(4, result.PacketsReceived);
         Assert.Equal(0, result.PacketsLost);
+        Assert.True(result.IsReachable, "replies were received");
     }
 
     [Test]
-    public void AllSuccess_ComputesAverageLatency()
+    public void SuccessRemote_ComputesAverageLatency()
     {
-        var result = PingOutputParser.Parse("8.8.8.8", SuccessJson);
+        var result = PingOutputParser.Parse("10.113.96.148", SuccessRemote);
 
-        // (10 + 12 + 11 + 9) / 4 = 10.5
-        Assert.Equal(10.5, result.AverageLatencyMs);
+        // (9 + 11 + 9 + 12) / 4 = 10.25
+        Assert.Equal(10.25, result.AverageLatencyMs);
     }
 
     [Test]
-    public void PartialLoss_CountsReceivedAndLost()
+    public void SuccessLoopback_SubMillisecond_TreatedAsZero()
     {
-        var result = PingOutputParser.Parse("8.8.8.8", PartialLossJson);
+        var result = PingOutputParser.Parse("127.0.0.1", SuccessLoopback);
+
+        Assert.Equal(4, result.PacketsReceived);
+        Assert.True(result.IsReachable);
+        // "tempo<1ms" is counted as a successful reply with latency 0.
+        Assert.Equal(0.0, result.AverageLatencyMs);
+    }
+
+    [Test]
+    public void AllTimeout_IsUnreachable()
+    {
+        var result = PingOutputParser.Parse("8.8.8.8", AllTimeout);
 
         Assert.Equal(4, result.PacketsSent);
-        Assert.Equal(2, result.PacketsReceived);
-        Assert.Equal(2, result.PacketsLost);
-        Assert.True(result.IsReachable, "at least one reply succeeded");
-    }
-
-    [Test]
-    public void PartialLoss_AveragesOnlySuccessfulReplies()
-    {
-        var result = PingOutputParser.Parse("8.8.8.8", PartialLossJson);
-
-        // Only successful latencies (10, 20) count: average 15.
-        Assert.Equal(15.0, result.AverageLatencyMs);
-    }
-
-    [Test]
-    public void SingleObject_NotArray_IsHandled()
-    {
-        // ConvertTo-Json emits a single object (not an array) when Count = 1.
-        var single = @"{ ""Status"": ""Success"", ""Latency"": 7, ""Address"": ""8.8.8.8"" }";
-
-        var result = PingOutputParser.Parse("8.8.8.8", single);
-
-        Assert.Equal(1, result.PacketsSent);
-        Assert.Equal(1, result.PacketsReceived);
-        Assert.Equal(7.0, result.AverageLatencyMs);
-    }
-
-    [Test]
-    public void AllTimedOut_IsUnreachable()
-    {
-        var json = @"[
-            { ""Status"": ""TimedOut"", ""Latency"": 0, ""Address"": ""10.0.0.1"" },
-            { ""Status"": ""TimedOut"", ""Latency"": 0, ""Address"": ""10.0.0.1"" }
-        ]";
-
-        var result = PingOutputParser.Parse("10.0.0.1", json);
-
-        Assert.False(result.IsReachable, "no replies succeeded");
         Assert.Equal(0, result.PacketsReceived);
+        Assert.Equal(4, result.PacketsLost);
+        Assert.False(result.IsReachable, "no replies");
         Assert.Null(result.AverageLatencyMs);
+    }
+
+    [Test]
+    public void AllTimeout_LossIs100Percent()
+    {
+        var result = PingOutputParser.Parse("8.8.8.8", AllTimeout);
+        Assert.Equal(100.0, result.LossPercentage);
+    }
+
+    [Test]
+    public void PartialLoss_IsCountedFromStatisticsLine()
+    {
+        // 4 sent, 3 received -> reachable, 1 lost. Latency lines present for
+        // the successful replies only.
+        var text =
+@"Disparando 10.0.0.5 com 32 bytes de dados:
+Resposta de 10.0.0.5: bytes=32 tempo=5ms TTL=64
+Esgotado o tempo limite do pedido.
+Resposta de 10.0.0.5: bytes=32 tempo=7ms TTL=64
+Resposta de 10.0.0.5: bytes=32 tempo=6ms TTL=64
+
+Estatísticas do Ping para 10.0.0.5:
+    Pacotes: Enviados = 4, Recebidos = 3, Perdidos = 1 (25% de
+             perda),";
+
+        var result = PingOutputParser.Parse("10.0.0.5", text);
+
+        Assert.Equal(4, result.PacketsSent);
+        Assert.Equal(3, result.PacketsReceived);
+        Assert.Equal(1, result.PacketsLost);
+        Assert.True(result.IsReachable);
+        // Average of successful replies: (5 + 7 + 6) / 3 = 6
+        Assert.Equal(6.0, result.AverageLatencyMs);
+    }
+
+    [Test]
+    public void UnreachableHost_IsNotCountedAsReply()
+    {
+        // "Host de destino inacessível" is a failure, not a reply.
+        var text =
+@"Disparando 192.168.1.9 com 32 bytes de dados:
+Resposta de 192.168.1.1: Host de destino inacessível.
+Resposta de 192.168.1.1: Host de destino inacessível.
+
+Estatísticas do Ping para 192.168.1.9:
+    Pacotes: Enviados = 2, Recebidos = 0, Perdidos = 2 (100% de
+             perda),";
+
+        var result = PingOutputParser.Parse("192.168.1.9", text);
+
+        Assert.Equal(0, result.PacketsReceived);
+        Assert.False(result.IsReachable, "host unreachable is not a successful reply");
     }
 
     [Test]
     public void Target_IsPreserved()
     {
-        var result = PingOutputParser.Parse("8.8.8.8", SuccessJson);
-        Assert.Equal("8.8.8.8", result.Target);
+        var result = PingOutputParser.Parse("10.113.96.148", SuccessRemote);
+        Assert.Equal("10.113.96.148", result.Target);
+    }
+
+    [Test]
+    public void EmptyOutput_IsUnreachable()
+    {
+        var result = PingOutputParser.Parse("8.8.8.8", "");
+
+        Assert.Equal(0, result.PacketsReceived);
+        Assert.False(result.IsReachable);
     }
 }
 
 public class TracertOutputParserTests
 {
-    // Shape from: Test-NetConnection 1.1.1.1 -TraceRoute | ConvertTo-Json
-    // TraceRoute is an array of hop addresses; PingSucceeded is a bool.
-    private const string TraceJson = @"{
-        ""ComputerName"": ""1.1.1.1"",
-        ""RemoteAddress"": ""1.1.1.1"",
-        ""PingSucceeded"": true,
-        ""TraceRoute"": [ ""192.168.0.1"", ""10.0.0.1"", ""200.200.200.1"", ""1.1.1.1"" ]
-    }";
+    // Real output of: tracert -d -h 15 10.113.96.148  (destination reached)
+    private const string TraceReached =
+@"Rastreando a rota para 10.113.96.148 com no máximo 15 saltos
+
+  1    <1 ms    <1 ms    <1 ms  10.181.44.1
+  2    <1 ms    <1 ms    <1 ms  10.127.103.45
+  3     3 ms     3 ms     4 ms  201.61.225.13
+  4    10 ms     8 ms    12 ms  189.9.247.61
+  5     9 ms     8 ms    10 ms  189.9.247.62
+  6    10 ms    12 ms    12 ms  10.127.53.234
+  7     9 ms    12 ms    12 ms  10.113.96.148
+
+Rastreamento concluído.";
+
+    // Real output of: tracert -d -h 15 8.8.8.8  (all hops time out)
+    private const string TraceAllTimeout =
+@"Rastreando a rota para 8.8.8.8 com no máximo 15 saltos
+
+  1     *        *        *     Esgotado o tempo limite do pedido.
+  2     *        *        *     Esgotado o tempo limite do pedido.
+  3     *        *        *     Esgotado o tempo limite do pedido.
+
+Rastreamento concluído.";
 
     [Test]
-    public void ParsesAllHopsInOrder()
+    public void Reached_ParsesAllHopsInOrder()
     {
-        var result = TracertOutputParser.Parse("1.1.1.1", TraceJson);
+        var result = TracertOutputParser.Parse("10.113.96.148", TraceReached);
 
-        Assert.Count(4, result.Hops);
-        Assert.Equal("192.168.0.1", result.Hops[0].Address);
+        Assert.Count(7, result.Hops);
         Assert.Equal(1, result.Hops[0].Number);
-        Assert.Equal("1.1.1.1", result.Hops[3].Address);
-        Assert.Equal(4, result.Hops[3].Number);
+        Assert.Equal("10.181.44.1", result.Hops[0].Address);
+        Assert.Equal(7, result.Hops[6].Number);
+        Assert.Equal("10.113.96.148", result.Hops[6].Address);
     }
 
     [Test]
-    public void PreservesTargetAndReachability()
+    public void Reached_LastHopEqualsTarget_MarksDestinationReached()
     {
-        var result = TracertOutputParser.Parse("1.1.1.1", TraceJson);
+        var result = TracertOutputParser.Parse("10.113.96.148", TraceReached);
 
-        Assert.Equal("1.1.1.1", result.Target);
-        Assert.True(result.DestinationReached);
+        Assert.True(result.DestinationReached, "last hop is the target");
+        Assert.Equal("10.113.96.148", result.Target);
     }
 
     [Test]
-    public void EmptyTraceRoute_ProducesNoHops()
+    public void AllTimeout_ProducesTimedOutHops_WithNoAddress()
     {
-        var json = @"{ ""ComputerName"": ""1.1.1.1"", ""PingSucceeded"": false, ""TraceRoute"": [] }";
+        var result = TracertOutputParser.Parse("8.8.8.8", TraceAllTimeout);
 
-        var result = TracertOutputParser.Parse("1.1.1.1", json);
+        // Hops that only show "* * *" have no resolvable address.
+        Assert.Count(3, result.Hops);
+        foreach (var hop in result.Hops)
+            Assert.Equal("", hop.Address);
+    }
 
-        Assert.Empty(result.Hops);
+    [Test]
+    public void AllTimeout_DestinationNotReached()
+    {
+        var result = TracertOutputParser.Parse("8.8.8.8", TraceAllTimeout);
         Assert.False(result.DestinationReached);
     }
 
     [Test]
-    public void SingleHop_AsScalar_IsHandled()
+    public void EmptyOutput_ProducesNoHops()
     {
-        // ConvertTo-Json may emit a scalar instead of a 1-element array.
-        var json = @"{ ""ComputerName"": ""1.1.1.1"", ""PingSucceeded"": true, ""TraceRoute"": ""1.1.1.1"" }";
+        var result = TracertOutputParser.Parse("8.8.8.8", "");
 
-        var result = TracertOutputParser.Parse("1.1.1.1", json);
-
-        Assert.Count(1, result.Hops);
-        Assert.Equal("1.1.1.1", result.Hops[0].Address);
+        Assert.Empty(result.Hops);
+        Assert.False(result.DestinationReached);
     }
 }

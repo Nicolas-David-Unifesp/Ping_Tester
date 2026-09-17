@@ -1,8 +1,15 @@
 # Ping Tester
 
 Aplicação web em **C# / ASP.NET Core** para executar **ping** e **tracert**
-automatizados sobre uma lista de IPs, usando os **cmdlets do PowerShell**
-(`Test-Connection` e `Test-NetConnection -TraceRoute`).
+automatizados sobre uma lista de IPs, usando os executáveis clássicos do
+Windows **`ping.exe`** e **`tracert.exe`** (mesmo mecanismo ICMP do Prompt de
+Comando). O tracert é limitado a **15 saltos** (`tracert -d -h 15`).
+
+> **Por que não os cmdlets?** A ideia inicial usava `Test-Connection` /
+> `Test-NetConnection`. Porém, no **Windows PowerShell 5.1**, o `Test-Connection`
+> usa WMI e falhava no ambiente-alvo ("Erro devido à falta de recursos"), mesmo
+> com o ping do CMD funcionando. Os executáveis clássicos usam ICMP direto e
+> funcionam de forma confiável em qualquer versão do Windows.
 
 Os IPs podem ser **digitados** (um por linha, ou separados por vírgula/ponto e
 vírgula) ou enviados em um **arquivo CSV**.
@@ -13,21 +20,22 @@ A regra central: **o núcleo puro decide e interpreta; o shell executa.**
 
 ```
 ┌──────────────────────── IMPERATIVE SHELL (impuro) ────────────────────────┐
-│  ASP.NET (PingTester.Web)  →  PowerShellExecutor  →  powershell / pwsh     │
+│  ASP.NET (PingTester.Web)  →  PowerShellExecutor  →  ping.exe / tracert.exe│
 │  NetworkTestOrchestrator ── sequencia chamadas puras em volta do efeito ── │
 │                                                                            │
 │   ┌──────────────────── FUNCTIONAL CORE (puro) ────────────────────────┐  │
 │   │ PingTester.Core:                                                    │  │
 │   │  • IpParser / CsvIpExtractor  — texto → IPs válidos + erros         │  │
 │   │  • PowerShellCommandBuilder   — monta o comando como DADOS          │  │
-│   │  • PingOutputParser / TracertOutputParser — JSON bruto → resultado  │  │
+│   │  • PingOutputParser / TracertOutputParser — texto bruto → resultado │  │
 │   │  Sem rede, sem processo, sem I/O → 100% testável offline.           │  │
 │   └─────────────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Fluxo por host: **core monta o spec → shell executa e captura JSON
-(`ConvertTo-Json`) → core parseia o JSON → resultado de domínio**.
+Fluxo por host: **core monta o spec (`ping -n 4 <ip>` / `tracert -d -h 15 <ip>`)
+→ shell executa e captura o TEXTO → core parseia o texto (pt-BR) → resultado de
+domínio**.
 
 ### Projetos
 
@@ -40,8 +48,8 @@ Fluxo por host: **core monta o spec → shell executa e captura JSON
 
 ## Como rodar (no Windows)
 
-Pré-requisitos: **.NET SDK 8/9** e **PowerShell** (o Windows já vem com
-`powershell`; para PowerShell 7 use `pwsh`).
+Pré-requisitos: **.NET SDK 8/9** e **Windows** (o app usa `ping.exe` e
+`tracert.exe`, que já vêm no Windows).
 
 ```powershell
 dotnet run --project src/PingTester.Web
@@ -49,11 +57,11 @@ dotnet run --project src/PingTester.Web
 
 Abra o endereço mostrado no console (ex.: `http://localhost:5000`).
 
-Para usar o PowerShell 7 (`pwsh`) em vez do Windows PowerShell, configure:
+O tempo limite por comando (padrão 120s) pode ser ajustado via configuração:
 
 ```powershell
-# via variável de ambiente
-$env:PowerShell__Exe = "pwsh"
+# via variável de ambiente (ex.: 60 segundos)
+$env:Ping__TimeoutSeconds = "60"
 dotnet run --project src/PingTester.Web
 ```
 
@@ -106,7 +114,10 @@ dotnet run --project tests/PingTester.Core.Tests
 
 - Todo IP é validado no **núcleo puro** (`IPAddress.TryParse`, whitelist de
   formato) **antes** de qualquer execução.
-- No shell, os valores vão para o PowerShell via **splatting de hashtable**
-  (bind como dado, não como script), com escape de aspas e uma verificação
-  extra de caracteres (defesa em profundidade).
+- No shell, cada opção, flag e o IP são passados como **argumentos de processo
+  distintos** (`ProcessStartInfo.ArgumentList`), nunca concatenados numa string
+  de shell — então um valor não consegue injetar comando. Há ainda uma
+  verificação extra de caracteres (defesa em profundidade).
+- A saída de `ping`/`tracert` é lida com a **code page OEM** do Windows
+  (via `Console.OutputEncoding`), para os acentos do português virem corretos.
 - Limite de **256 hosts** por requisição e CSV de no máximo **1 MB**.
